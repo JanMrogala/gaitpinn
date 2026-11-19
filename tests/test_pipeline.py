@@ -30,7 +30,7 @@ def fake_runs(d, people=tuple(f"AB{i:02d}" for i in range(1, 10)), bad=("AB06",)
                     "file": np.zeros(9000, int),
                 }
                 walk = (e[:3000], score[:3000], {"levelground": (e[:3000], score[:3000])})
-                met = metrics.run_metrics(stream, y + e, walk)
+                met = metrics.run_metrics(stream, y + e, walk) | {"val_rmse": 2.0}
                 rid = f"final-{m}-{p}-s{seed}-jx"
                 rec = {
                     "run_id": rid,
@@ -64,6 +64,8 @@ def test_summary_figures_site(tmp_path):
     assert s["extra"]["pinn_strong"]["verdict"] == "base is better"
     s = json.loads((tmp_path / "summary" / "results.json").read_text())
     figs = {"error_over_time": plot.error_over_time(s), "error_by_bout": plot.error_by_bout(s)}
+    figs["error_over_time_pinn_strong"] = plot.error_over_time(s, models=["base", "pinn_strong"])
+    figs["error_by_bout_pinn_strong"] = plot.error_by_bout(s, models=["base", "pinn_strong"])
     (tmp_path / "summary" / "figures.json").write_text(json.dumps(figs))
     (tmp_path / "summary" / "people.json").write_text(json.dumps(plot.people(tmp_path, s)))
     out = tmp_path / "site"
@@ -71,4 +73,28 @@ def test_summary_figures_site(tmp_path):
     page = (out / "index.html").read_text()
     assert "Yes: pinn kept a lower" in page and "fig1" in page
     assert "AB06" in (out / "people.html").read_text()
-    assert "Strongly physics-constrained model (pinn_strong" in page
+    assert "Added after the main result" in page and "error_over_time_pinn_strong" in page
+
+
+def _core(s):
+    keep = ["people", "H", "primary", "verdict", "secondary"]
+    out = {k: s[k] for k in keep}
+    out["numbers"] = {m: s["numbers"][m] for m in ("base", "pinn")}
+    out["curves"] = {k: s["curves"][k] for k in ("t", "base", "pinn")}
+    return json.dumps(out, sort_keys=True)
+
+
+def test_extra_model_never_changes_the_preregistered_result(tmp_path):
+    import shutil
+
+    fake_runs(tmp_path)
+    ref = None
+    for d in sorted(tmp_path.glob("final-pinn_strong-*")):  # 1) without any pinn_strong run
+        shutil.move(d, tmp_path.parent / ("aside_" + d.name))
+    ref = _core(metrics.summary(tmp_path))
+    for d in sorted(tmp_path.parent.glob("aside_final-pinn_strong-*")):  # 2) all present
+        shutil.move(d, tmp_path / d.name.removeprefix("aside_"))
+    assert _core(metrics.summary(tmp_path)) == ref
+    shutil.rmtree(tmp_path / "final-pinn_strong-AB01-s4-jx")  # 3) one strong run missing
+    s = metrics.summary(tmp_path)
+    assert _core(s) == ref and "pinn_strong" not in s["models"]

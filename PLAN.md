@@ -389,10 +389,18 @@ What was actually used, checked on the system on 2026-11-19:
   `base` vs `pinn` verdict above is unchanged.
   - **Settings:** the same network and settings as the tuned `pinn` (lr 3e-3, width 64,
     dropout 0, up to 150 epochs) with a fixed, untuned physics weight λ = 0.1.
-  - **Why 0.1:** chosen from walking-only numbers measured before training (floor of the physics
-    terms with the true angles ≈ 2.6; converged angle loss of `base` ≈ 0.015). At λ = 0.1 the
-    physics term is about 15× the angle loss, so physics dominates training. No stairs number
-    was used to choose it.
+  - **Why 0.1:** this value was fixed **after the base-vs-pinn stairs result was known**, but only
+    from walking-only numbers measured before the final batch: the floor of the physics terms
+    with the true angles ≈ 2.6, and `base`'s converged angle loss ≈ 0.015.
+    - At λ = 0.1 the physics term is about 17× the angle loss at the floor, so physics
+      dominates training.
+    - Round 1 had already trained λ = 0.03, 0.3 and 3 on walking validation: `pinn` got worse
+      as λ grew (λ = 0.03: 3.76° vs `base` 2.41°, under round-1 settings). 0.1 sits between the
+      two lower values: strongly constrained, without the very large walking errors of λ ≥ 0.3.
+    - No stairs number was used to choose it.
   - **Test:** the same as the primary one, on the same 16 people: Wilcoxon on `base − pinn_strong`,
     error after switch averaged over the three joints, with the same verdict rule. Reported as
     a separate, clearly labelled result.
+  - **Also reported:** its walking-validation and walking-test errors. Its time to fail is
+    shown only as a secondary result, because the threshold is relative to each model's own
+    walking error.

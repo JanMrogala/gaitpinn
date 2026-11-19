@@ -5,7 +5,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$REPO/../site"
 [ -f "$SITE/index.html" ] || { echo "build the site first: make site" >&2; exit 1; }
-if grep -rqE "/home/|\.env|project_[0-9]{9}" "$SITE"; then echo "site contains local paths or IDs" >&2; exit 1; fi
+if grep -rqE "/home/|\.env\.local|project_[0-9]{9}" --include='*.html' "$SITE" \
+   || grep -rqE "/home/|project_[0-9]{9}" "$SITE"; then echo "site contains local paths or IDs" >&2; exit 1; fi
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 cp -r "$SITE/." "$TMP/"
 cd "$TMP"

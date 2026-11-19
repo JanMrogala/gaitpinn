@@ -53,12 +53,13 @@ def _joint_buttons(n_per_joint: int, default: int, extra_shapes: dict) -> list:
     ]
 
 
-def error_over_time(s: dict, default: str = "knee") -> dict:
+def error_over_time(s: dict, default: str = "knee", models=None, title=None) -> dict:
+    models = models or MODELS
     c = s["curves"]
     t = c["t"]
     traces, shapes = [], {}
     for j in JOINTS:
-        for m in s.get("models", MODELS):
+        for m in models:
             cur = c[m][j]
             vis = j == default
             traces.append(
@@ -96,7 +97,7 @@ def error_over_time(s: dict, default: str = "knee") -> dict:
                 "line": {"color": "#555", "width": 1},
             }
         ]
-        for m in s.get("models", MODELS):
+        for m in models:
             w = s["numbers"][m]["walk_error"][j]
             sh.append(
                 {
@@ -111,23 +112,22 @@ def error_over_time(s: dict, default: str = "knee") -> dict:
             )
         shapes[j] = sh
     layout = LAYOUT | {
-        "title": {"text": "Joint-angle error over time since the switch to stairs"},
+        "title": {"text": title or "Joint-angle error over time since the switch to stairs"},
         "xaxis": {"title": {"text": "time since switch (s)"}},
         "yaxis": {"title": {"text": "rolling 2 s RMSE (°)"}, "rangemode": "tozero"},
         "shapes": shapes[default],
-        "updatemenus": _joint_buttons(
-            2 * len(s.get("models", MODELS)), JOINTS.index(default), shapes
-        ),
+        "updatemenus": _joint_buttons(2 * len(models), JOINTS.index(default), shapes),
     }
     return {"data": traces, "layout": layout}
 
 
-def error_by_bout(s: dict, default: str = "knee") -> dict:
+def error_by_bout(s: dict, default: str = "knee", models=None) -> dict:
+    models = models or MODELS
     b = s["bouts"]
     traces, shapes = [], {}
     for j in JOINTS:
         for kind, dash in [("ascent", "solid"), ("descent", "dot")]:
-            for m in s.get("models", MODELS):
+            for m in models:
                 traces.append(
                     {
                         "x": b["t"],
@@ -155,9 +155,7 @@ def error_by_bout(s: dict, default: str = "knee") -> dict:
         "xaxis": {"title": {"text": "time since stair entry (s)"}},
         "yaxis": {"title": {"text": "RMSE over bouts (°)"}, "rangemode": "tozero"},
         "shapes": shapes[default],
-        "updatemenus": _joint_buttons(
-            2 * len(s.get("models", MODELS)), JOINTS.index(default), shapes
-        ),
+        "updatemenus": _joint_buttons(2 * len(models), JOINTS.index(default), shapes),
     }
     return {"data": traces, "layout": layout}
 
@@ -196,6 +194,11 @@ def main() -> None:
     a = ap.parse_args()
     s = json.loads((a.runs / "summary" / "results.json").read_text())
     figs = {"error_over_time": error_over_time(s), "error_by_bout": error_by_bout(s)}
+    for m in s.get("extra", {}):  # added comparisons get their own figures
+        figs[f"error_over_time_{m}"] = error_over_time(
+            s, models=["base", m], title=f"Added comparison: base vs {m}"
+        )
+        figs[f"error_by_bout_{m}"] = error_by_bout(s, models=["base", m])
     (a.runs / "summary" / "figures.json").write_text(json.dumps(figs))
     (a.runs / "summary" / "people.json").write_text(json.dumps(people(a.runs, s)))
     print("wrote figures.json and people.json")

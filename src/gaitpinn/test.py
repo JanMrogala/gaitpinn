@@ -199,8 +199,14 @@ def summary(runs_dir: Path) -> dict:
         for m in models
         for p in people
     }
-    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in models)]
-    H = min(r["metrics"]["stairs_seconds"] for r in final if r["person"] in complete)
+    # the pre-registered comparison depends only on base and pinn runs
+    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in MODELS)]
+    models = MODELS + [m for m in models[2:] if all(len(by[(m, p)]) == 5 for p in complete)]
+    H = min(
+        r["metrics"]["stairs_seconds"]
+        for r in final
+        if r["person"] in complete and r["model"] in MODELS
+    )
 
     def seed_mean(m, p, key):
         return {j: float(np.mean([r["metrics"][key][j] for r in by[(m, p)]])) for j in JOINTS}
@@ -265,7 +271,17 @@ def summary(runs_dir: Path) -> dict:
             for key in ["error_after_switch", "error_ascent", "error_descent", "time_to_fail"]
             for j in JOINTS
         }
-        extra[m] = {"primary": prim, "verdict": verdict(prim, m), "secondary": sec}
+        extra[m] = {
+            "primary": prim,
+            "verdict": verdict(prim, m),
+            "secondary": sec,
+            "val_rmse": {
+                mm: float(
+                    np.mean([r["metrics"]["val_rmse"] for p in complete for r in by[(mm, p)]])
+                )
+                for mm in ("base", m)
+            },
+        }
     curves = error_curves(runs_dir, by, complete, H, models)
     bouts = bout_curves(runs_dir, by, complete, models)
     # sensitivity only (not the verdict): all people, including those excluded by the gyro check

@@ -6,7 +6,7 @@ width: 64
 levels: 6
 kernel: 3
 dropout: 0.0
-lr: 1.0e-3
+lr: 3.0e-3
 weight_decay: 0.0
 batch_size: 64
 chunk_s: 4.0

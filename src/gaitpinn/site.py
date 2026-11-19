@@ -112,6 +112,54 @@ def verdict_sentence(s: dict) -> str:
     return f"{lead} ({stats})."
 
 
+def added_section(s: dict, figs: dict, m: str) -> str:
+    """A comparison added after the pre-registered result, shown separately and neutrally."""
+    x, n, c = s["extra"][m], s["numbers"], s["configs"][m]
+    q = x["primary"]
+    joints = ["hip", "knee", "ankle"]
+    head = "".join(f"<th>{j}</th>" for j in joints)
+    rows = ""
+    for mm in ["base", m]:
+        e = "".join(f"<td>{n[mm]['error_after_switch'][j]:.2f}</td>" for j in joints)
+        u = "".join(f"<td>{n[mm]['error_ascent'][j]:.2f}</td>" for j in joints)
+        w = "".join(f"<td>{n[mm]['walk_error'][j]:.2f}</td>" for j in joints)
+        rows += (
+            f"<tr><td><b>{mm}</b></td>{e}<td>{n[mm]['error_after_switch_mean3']:.2f}</td>"
+            f"{u}{w}<td>{x['val_rmse'][mm]:.2f}</td></tr>"
+        )
+    sec = "".join(
+        f"<tr><td>{k}</td><td>{v['hodges_lehmann']:+.2f}</td><td>{v['rank_biserial_r']:+.2f}"
+        f"</td><td>{v['p']:.3f}</td></tr>"
+        for k, v in x["secondary"].items()
+    )
+    word = {
+        "no clear difference": "no clear difference between the two",
+        "base is better": "base had the lower error on stairs",
+        f"{m} is better": f"{m} had the lower error on stairs",
+    }[x["verdict"]]
+    return f"""
+<h2>Added after the main result: a strongly physics-constrained model</h2>
+<p class=note>Not pre-registered. Requested after the main result was known.
+<code>{m}</code> is the tuned <code>pinn</code> network (lr {c["lr"]:g}, width {c["width"]})
+with a fixed, large physics weight λ = {c["lam"]:g}, chosen from walking-only loss scales and
+not tuned. Compared with base by the same test on the same {q["n"]} people:
+<b>{html.escape(word)}</b> (Wilcoxon p = {q["p"]:.3f}, rank-biserial r =
+{q["rank_biserial_r"]:+.2f}, Hodges–Lehmann difference base − {m}
+{q["hodges_lehmann"]:+.2f}°, 95% CI {q["hl_ci95"][0]:+.2f} to {q["hl_ci95"][1]:+.2f}).</p>
+<div data-fig="error_over_time_{m}" style="height:520px"></div>
+<div class=wrap><table><thead>
+<tr><th rowspan=2>Model</th><th colspan=4>Error after switch (°)</th>
+<th colspan=3>Climbing up (°)</th><th colspan=3>Walking error (°)</th>
+<th rowspan=2>Walking validation (°)</th></tr>
+<tr>{head}<th>mean</th>{head}{head}</tr></thead><tbody>{rows}</tbody></table></div>
+<p>Time to fail is measured against each model's own walking error, so a model that walks
+less accurately gets a looser threshold; it is shown in the secondary results only.</p>
+<details><summary>Secondary results (base − {m})</summary><div class=wrap><table>
+<thead><tr><th>measure</th><th>HL diff</th><th>r</th><th>p</th></tr></thead>
+<tbody>{sec}</tbody></table></div></details>
+<div data-fig="error_by_bout_{m}" style="height:460px"></div>"""
+
+
 def results_body(runs_dir: Path) -> tuple[str, bool]:
     s = load_summary(runs_dir, "results")
     figs = load_summary(runs_dir, "figures")
@@ -121,7 +169,7 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
     n = s["numbers"]
     joints = ["hip", "knee", "ankle"]
     head = "".join(f"<th>{j}</th>" for j in joints)
-    models = s.get("models", ["base", "pinn"])
+    models = ["base", "pinn"]  # the pre-registered comparison only
     rows = ""
     for m in models:
         e = "".join(f"<td>{n[m]['error_after_switch'][j]:.2f}</td>" for j in joints)
@@ -144,28 +192,10 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
         for k, v in s["secondary"].items()
     )
     sens = s["sensitivity_all_people"]
-    strong = ""
-    for m, x in s.get("extra", {}).items():
-        q = x["primary"]
-        lam = s["configs"][m]["lam"]
-        lead = {
-            f"{m} is better": f"Yes: {m} kept a lower error than base",
-            "base is better": f"No: base kept a lower error than {m}",
-            "no clear difference": f"No clear difference between {m} and base",
-        }[x["verdict"]]
-        strong += (
-            f"<p class=note><b>Strongly physics-constrained model ({m}, λ = {lam:g}, added "
-            f"after the main result on request; not part of the pre-registered verdict).</b> "
-            f"{html.escape(lead)} (mean error on stairs: base "
-            f"{n['base']['error_after_switch_mean3']:.2f}°, {m} "
-            f"{n[m]['error_after_switch_mean3']:.2f}°; Wilcoxon p = {q['p']:.3f}, "
-            f"rank-biserial r = {q['rank_biserial_r']:+.2f}, Hodges–Lehmann "
-            f"{q['hodges_lehmann']:+.2f}°, n = {q['n']}).</p>"
-        )
+    added = "".join(added_section(s, figs, m) for m in s.get("extra", {}))
     body = f"""
 <h1>Results</h1>
 <p class=note><b>Did pinn last longer?</b> {html.escape(verdict_sentence(s))}</p>
-{strong}
 <div id=fig1 style="height:520px"></div>
 <h2>The two numbers per model</h2>
 <p>Error after switch: RMSE (°) over the stairs part, mean over people. Time to fail: median
@@ -198,6 +228,7 @@ r = {sens["rank_biserial_r"]:+.2f}.</p>
 <tbody>{sec}</tbody></table></div></details>
 <h2>Around each stair entry</h2>
 <div id=fig2 style="height:460px"></div>
+{added}
 <p>All numbers are computed by <code>gaitpinn.test</code> from the final runs listed on the
 <a href="runs.html">Runs</a> page; per-person run IDs are on the <a href="people.html">People</a>
 page.</p>
@@ -206,6 +237,8 @@ const F={json.dumps(figs)};
 const cfg={{responsive:true,displaylogo:false}};
 Plotly.newPlot('fig1',F.error_over_time.data,F.error_over_time.layout,cfg);
 Plotly.newPlot('fig2',F.error_by_bout.data,F.error_by_bout.layout,cfg);
+document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
+  Plotly.newPlot(el,f.data,f.layout,cfg);}});
 </script>"""
     return body, True
 
