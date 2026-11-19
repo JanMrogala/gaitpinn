@@ -1,4 +1,6 @@
 PY ?= .venv/bin/python
+-include .env.local
+RUNS_PATH ?= ../runs
 
 .PHONY: check lint test hooks site
 
@@ -15,4 +17,4 @@ hooks:
 	git config core.hooksPath .githooks
 
 site:
-	$(PY) -m gaitpinn.site --runs ../runs --out ../site
+	$(PY) -m gaitpinn.site --runs $(RUNS_PATH) --out $(RUNS_PATH)/../site

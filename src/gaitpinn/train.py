@@ -74,17 +74,18 @@ def main() -> None:
     ap.add_argument("--runs", type=Path, required=True, help="folder for run records")
     ap.add_argument("--code", type=Path, default=Path(__file__).resolve().parents[2])
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--steps", type=int, default=200, help="smoke run only")
     a = ap.parse_args()
 
     cfg = yaml.safe_load(a.config.read_text())
     kind = "smoke" if a.smoke else "final"
     if not a.smoke:
         raise NotImplementedError("real training is added in step 6 (see PLAN.md)")
-    metrics = smoke(cfg, a.seed)
-    rid = runs.run_id(kind, cfg["model"], a.person, a.seed)
+    # The record is written before training, so failed runs still leave a trace.
     record = {
-        "run_id": rid,
+        "run_id": runs.run_id(kind, cfg["model"], a.person, a.seed),
         "kind": kind,
+        "status": "running",
         "model": cfg["model"],
         "person": a.person,
         "seed": a.seed,
@@ -92,7 +93,7 @@ def main() -> None:
         "config": cfg,
         "slurm_job": runs.slurm_job(),
         "gpu_hours": None,  # filled from sacct by jobs/fetch.sh
-        "metrics": metrics,
+        "metrics": None,
         "env": {
             "torch": torch.__version__,
             "python": platform.python_version(),
@@ -101,6 +102,9 @@ def main() -> None:
         },
     }
     out = runs.write_run(a.runs, record)
+    record["metrics"] = smoke(cfg, a.seed, a.steps)
+    record["status"] = "done"
+    runs.write_run(a.runs, record)
     print(f"wrote {out / 'run.json'}")
 
 
