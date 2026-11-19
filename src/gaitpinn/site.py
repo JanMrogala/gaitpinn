@@ -341,7 +341,24 @@ def study2_body(runs_dir: Path) -> tuple[str, bool]:
         f"; gyro term switched off by the label-free gate for {c['joints_gated_off']} of "
         f"{c['joint_checks']} joint checks.</li>"
         for m, c in s["calibration"].items()
+        if m in ("pinn_cal", "base_cal")
     )
+    gv = s["calibration"].get("gate_vs_true_check")
+    if gv:
+        cal += (
+            f"<li>Label-free gate vs the true-angle gyro check on validation people: both pass "
+            f"{gv['both_pass']}, both fail {gv['both_fail']}, gate only {gv['gate_only']}, true "
+            f"check only {gv['true_only']}.</li>"
+        )
+    dg = s["calibration"].get("diagnostic", {})
+    if dg:
+        better = sum(v["true"]["gyro"] < v["pred"]["gyro"] for v in dg.values())
+        sbetter = sum(v["true"]["swing"] < v["pred"]["swing"] for v in dg.values())
+        cal += (
+            f"<li>Diagnostic (validation people): the true angles score lower than the "
+            f"predictions on the gyro term for {better} of {len(dg)} and on the swing term for "
+            f"{sbetter} of {len(dg)}; calibration can only help where they do.</li>"
+        )
     sec = "".join(
         f"<tr><td>{html.escape(k)}</td><td>{v['hodges_lehmann']:+.2f}</td>"
         f"<td>{v['rank_biserial_r']:+.2f}</td><td>{v['p']:.3f}</td></tr>"

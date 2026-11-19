@@ -147,7 +147,7 @@ def fake_xruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 11))):
 
 def test_study2_summary_and_page(tmp_path):
     fake_xruns(tmp_path)
-    s = metrics.xsummary(tmp_path)
+    s = metrics.xsummary(tmp_path, require=10)
     assert set(s["tests"]) == {"base vs pinn", "base vs pinn_cal", "pinn vs pinn_cal"}
     assert s["tests"]["base vs pinn_cal"]["verdict"] == "pinn_cal is better"
     assert s["tests"]["base vs pinn"]["verdict"] == "no clear difference"

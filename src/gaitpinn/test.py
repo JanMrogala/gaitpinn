@@ -458,6 +458,12 @@ def xselect(runs_dir: Path) -> dict:
         s = next(s for s in cross.cal_settings(r["model"]) if s["name"] == best)
         out[f][f"cal_{r['model']}"] = s
         out[f][f"_cal_{r['model']}"] = (res[best], r["run_id"])
+    for f, v in out.items():  # never hand an incomplete choice to the final batch
+        if not {"base", "pinn"} <= set(v):
+            raise SystemExit(f"{f}: missing tuning result")
+        has_cal = {k for k in ("cal_base", "cal_pinn") if k in v}
+        if has_cal and has_cal != {"cal_base", "cal_pinn"}:
+            raise SystemExit(f"{f}: calibration choice missing for one model")
     (runs_dir / "chosen_x.json").write_text(json.dumps(out, indent=2))
     return out
 
@@ -472,7 +478,7 @@ def holm(ps: list[float]) -> list[float]:
     return adj.tolist()
 
 
-def xsummary(runs_dir: Path) -> dict:
+def xsummary(runs_dir: Path, require: int = 22) -> dict:
     """Final study-2 runs -> summary/results2.json."""
     from gaitpinn import runs as runrec
 
@@ -486,7 +492,13 @@ def xsummary(runs_dir: Path) -> dict:
         for m in models
         for p in people
     }
-    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in models)]
+    main3 = [m for m in ("base", "pinn", "pinn_cal") if m in models]
+    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in main3)]
+    if require and len(complete) < require:
+        raise SystemExit(f"only {len(complete)} people have all runs of {main3}")
+    models = main3 + [
+        m for m in models if m not in main3 and all(len(by[(m, p)]) == 5 for p in complete)
+    ]
     H = min(r["metrics"]["stairs_seconds"] for r in final if r["person"] in complete)
     fold_of = {r["person"]: r["fold"]["fold"] for r in final}
 
@@ -609,6 +621,22 @@ def xsummary(runs_dir: Path) -> dict:
                 "joints_gated_off": int(sum(not v for r in rs for v in r["gate"].values())),
                 "joint_checks": int(sum(len(r["gate"]) for r in rs)),
             }
+    xcal = [r for r in runrec.load_runs(runs_dir) if r["kind"] == "xcal" and r["status"] == "done"]
+    cal_info["diagnostic"] = {
+        f"fold{r['fold']['fold']}/{p}": v for r in xcal for p, v in r["diagnostic"].items()
+    }
+    agree = [
+        (g["true_check_ok"], all(g["gate"].values()))
+        for r in xcal
+        if r["model"] == "pinn"
+        for g in r["gates"].values()
+    ]
+    cal_info["gate_vs_true_check"] = {
+        "both_pass": sum(a and b for a, b in agree),
+        "both_fail": sum(not a and not b for a, b in agree),
+        "gate_only": sum(b and not a for a, b in agree),
+        "true_only": sum(a and not b for a, b in agree),
+    }
     curves = error_curves(runs_dir, by, complete, H, models)
     bouts = bout_curves(runs_dir, by, complete, models)
     out = {

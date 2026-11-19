@@ -43,6 +43,13 @@ GATE_R = 0.8
 ALL_MODES = [*data.WALKING, data.RAMP, data.STAIRS]
 SKIP = int(data.SKIP_S * data.RATE)
 PAR_KEYS = ("m", "d", "I_c", "l_t", "scale_dyn", "scale_tau", "tau_scale")
+# The fold table pre-registered in PLAN2.md (test people per fold).
+PLAN2_TEST = [
+    ["AB08", "AB10", "AB16", "AB18", "AB23", "AB27"],
+    ["AB06", "AB09", "AB12", "AB14", "AB17", "AB28"],
+    ["AB11", "AB13", "AB19", "AB25", "AB30"],
+    ["AB07", "AB15", "AB20", "AB21", "AB24"],
+]
 
 
 # ---------- people and folds ----------
@@ -612,6 +619,8 @@ def main() -> None:
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     people = a.people or sorted(p.stem for p in a.h5.glob("AB*.h5"))
     fl = folds(people, n_val=a.n_val)
+    if not a.people and [f["test"] for f in fl] != PLAN2_TEST:
+        raise SystemExit(f"folds differ from PLAN2.md (people found: {len(people)})")
     if a.kind == "folds":
         print(json.dumps(fl, indent=1))
         return

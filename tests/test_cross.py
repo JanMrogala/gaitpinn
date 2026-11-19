@@ -23,6 +23,34 @@ def test_folds_cover_everyone_once_and_never_mix_roles():
         assert sorted(f["test"] + f["val"] + f["train"]) == sorted(PEOPLE)
 
 
+def test_real_folds_match_plan2():
+    real = [
+        "AB06",
+        "AB07",
+        "AB08",
+        "AB09",
+        "AB10",
+        "AB11",
+        "AB12",
+        "AB13",
+        "AB14",
+        "AB15",
+        "AB16",
+        "AB17",
+        "AB18",
+        "AB19",
+        "AB20",
+        "AB21",
+        "AB23",
+        "AB24",
+        "AB25",
+        "AB27",
+        "AB28",
+        "AB30",
+    ]
+    assert [f["test"] for f in cross.folds(real)] == cross.PLAN2_TEST
+
+
 def test_holm():
     np.testing.assert_allclose(metrics.holm([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])
 
@@ -42,6 +70,19 @@ def test_xselect_is_nested_per_fold(tmp_path):
                     "metrics": {"val_rmse": v},
                 },
             )
+    for fold in (0, 1):
+        runs.write_run(
+            tmp_path,
+            {
+                "run_id": f"xtune-pinn-c00-fold{fold}",
+                "kind": "xtune",
+                "status": "done",
+                "model": "pinn-c00",
+                "fold": {"fold": fold},
+                "config": {"lr": 0.001, "width": 64, "lam": 0.01},
+                "metrics": {"val_rmse": 1.0},
+            },
+        )
     out = metrics.xselect(tmp_path)
     assert out["fold0"]["base"]["lr"] == 0.002 and out["fold1"]["base"]["lr"] == 0.001
 

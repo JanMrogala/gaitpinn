@@ -193,3 +193,7 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
   - the λ grid widened;
   - body-size-scaled shared swing parameters;
   - the fold table fixed in the plan.
+- **2026-11-19, local development runs.** Short runs on 4 people (AB21, AB23, AB24, AB25),
+  copied locally only to test the code, produced stream predictions for AB24, a fold-0 test
+  person. Nobody looked at them, and they were deleted. The code now refuses to run if the folds
+  differ from the table above, and refuses to hand on incomplete per-fold choices.
