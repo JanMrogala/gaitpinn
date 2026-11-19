@@ -4,7 +4,7 @@
 source "$(dirname "$0")/env.sh"
 PY="$REPO/.venv/bin/python"
 mkdir -p "$RUNS_LOCAL"
-rsync -a --timeout=120 --exclude '*.pt' --exclude '*.ckpt' "$LUMI_HOST:$SCR/runs/" "$RUNS_LOCAL/"
+rsync -a --timeout=900 --exclude '*.pt' --exclude '*.ckpt' "$LUMI_HOST:$SCR/runs/" "$RUNS_LOCAL/"
 ssh "$LUMI_HOST" "sacct -X -n -P -S ${GP_SINCE:-2026-11-18} --format=JobIDRaw,JobName,State,ElapsedRaw,AllocTRES" \
   > "$RUNS_LOCAL/.sacct.txt"
 "$PY" -m gaitpinn.runs ledger --runs "$RUNS_LOCAL" --sacct "$RUNS_LOCAL/.sacct.txt"

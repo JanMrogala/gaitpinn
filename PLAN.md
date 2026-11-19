@@ -379,3 +379,8 @@ What was actually used, checked on the system on 2026-11-19:
 - **2026-11-19, swing-model fit.** With the true angles, the swing residual is about 2.6 times
   the std of `I·knee_acc`. That is above what a trained model reaches, so the simple pendulum
   in the task spec explains true swing motion poorly. Reported as a limitation, not changed.
+- **2026-11-19, tuning result (round 2, walking validation, 16 included people).**
+  - `base`: r2c07 (lr 3e-3, width 32, weight decay 1e-5), mean validation RMSE 2.30°.
+  - `pinn`: r2c09 (lr 3e-3, width 64, λ = 0.001), mean validation RMSE 2.34°. λ = 0.001 is the
+    smallest value in the grid; as declared above, it is used as is. The plan is frozen from
+    here: no changes after the final batch.
