@@ -1,0 +1,12 @@
+# Data preparation (Camargo et al. 2021). See PLAN.md.
+dataset: camargo2021
+rate_hz: 100
+side: r
+targets: [hip_flexion_r, knee_angle_r, ankle_angle_r]
+walking_modes: [treadmill, levelground]
+test_only_modes: [stair]
+unused_modes: [ramp]
+split: {train: 0.70, val: 0.15, test: 0.15}
+split_seed: 0
+emg_envelope_hz: 6.0       # causal low-pass on rectified EMG
+stream_walk_s: 30.0

@@ -1,0 +1,37 @@
+[project]
+name = "gaitpinn"
+version = "0.1.0"
+description = "Does a PINN keep predicting joint angles for longer than a normal model when walking turns into stair climbing?"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "h5py",
+    "pyyaml",
+    "sympy",
+    "plotly",
+    "markdown",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: needs real data or long compute (not run by make check)"]
+addopts = "-m 'not slow'"
