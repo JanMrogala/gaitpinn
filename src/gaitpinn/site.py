@@ -185,6 +185,8 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
         + "</tr>"
         for m in models
     )
+    ttf = [n[m]["time_to_fail_median"][j] for m in models for j in joints]
+    ttf_lo, ttf_hi = min(ttf), max(ttf)
     pr = s["primary"]
     sec = "".join(
         f"<tr><td>{k}</td><td>{v['hodges_lehmann']:+.2f}</td><td>{v['rank_biserial_r']:+.2f}"
@@ -205,7 +207,8 @@ walking error for 2 s; runs that never fail count as the horizon H = {h:.0f} s.<
 <tr><th rowspan=2>Model</th><th colspan=4>Error after switch (°)</th>
 <th colspan=3>Time to fail (s)</th><th colspan=3>Walking error (°)</th></tr>
 <tr>{head}<th>mean</th>{head}{head}</tr></thead><tbody>{rows}</tbody></table></div>
-<p><b>How to read time to fail:</b> both models cross the threshold about 2 s after the switch.
+<p><b>How to read time to fail:</b> both models cross the threshold {ttf_lo:.1f}–{ttf_hi:.1f} s
+(median per joint) after the switch.
 That is before the first stair step (each stair recording starts with 2–3 s of walking up to the
 stairs) and within the network's 1.27 s context across the join between recordings, so it
 mostly reflects the join and the approach rather than the climbing itself.</p>
@@ -320,6 +323,7 @@ def method_body() -> str:
     parts = [
         ("Question", section(plan, "Question")),
         ("Data", section(data, "Recommendation: Camargo 2021")),
+        ("Data source and licence", section(data, "Choice")),
         ("Metrics", section(plan, "Metrics")),
         ("Decisions log", section(plan, "Decisions log")),
     ]

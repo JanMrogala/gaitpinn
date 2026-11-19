@@ -3,6 +3,16 @@
 Written before any model was trained. If anything changes after stairs results have been seen,
 it is logged at the bottom with the reason.
 
+**Where the body and the dated decisions log differ, the log wins.** It supersedes these parts
+of the body:
+- dropout 0 and an epoch cap of 150 (not 60);
+- the round-2 λ grid;
+- per-joint `pca`/`lsq` gyro alignment;
+- 6 Hz smoothing of the gyro reference;
+- the target-quality rule;
+- the job layout;
+- the added `pinn_strong` model.
+
 ## Question
 
 Two models are trained on **level walking only**. Each is then fed a stream that switches from

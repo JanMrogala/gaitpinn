@@ -104,3 +104,10 @@ for height. Camargo is the strongest of them because it is the only one with all
 ## Choice
 
 **Camargo 2021**, chosen on 2026-11-19.
+
+Camargo J, Ramanathan A, Flanagan W, Young A. A comprehensive, open-source dataset of lower limb
+biomechanics in multiple conditions of stairs, ramps, and level-ground ambulation and
+transitions. *Journal of Biomechanics* 119:110320 (2021), doi:10.1016/j.jbiomech.2021.110320.
+Data: Mendeley Data, doi:10.17632/fcgm3chfff, 10.17632/k9kvm5tn3f and 10.17632/jj3r5f9pnf
+(version 2), licensed CC BY 4.0. The angle traces shown on the website are derived from this
+dataset.

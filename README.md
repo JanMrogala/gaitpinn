@@ -6,6 +6,10 @@ walking. Which one keeps a low error for longer when the person starts climbing 
 
 - `PLAN.md`: question, split, metrics, threshold, decisions log.
 - `DATA.md`: dataset comparison and the one chosen (Camargo et al. 2021).
+- Code: `src/gaitpinn/`.
+  - The two physics terms live in `gyro.py` and `swing.py`.
+  - `matfile.py` reads the MATLAB tables.
+  - `configs/data.yaml` records the data settings, whose values are constants in `data.py`.
 
 ## Run
 

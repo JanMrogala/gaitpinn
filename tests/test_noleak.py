@@ -70,3 +70,41 @@ def test_target_quality_rule():
     wild = y.copy()
     wild[:20, 1] = 90.0
     assert not data.target_ok(wild)[0]
+
+
+def test_all_calibration_and_training_ignore_stairs(person):
+    """Garbage in every stair file must not change any calibration or the first training batch."""
+    import torch
+    import yaml
+
+    from gaitpinn import train
+
+    cfg = yaml.safe_load(open("configs/pinn.yaml"))
+
+    def snapshot():
+        p = train.Person(person)
+        b = next(
+            train.batches(p, p.split["train"], cfg, np.random.default_rng(0), torch.device("cpu"))
+        )
+        out = {
+            "align": p.align,
+            "gyro_scale": p.gyro_scale,
+            "swing_thr": p.swing_thr,
+            "emg_peak": p.emg_peak.tolist(),
+            "y_mean": p.y_mean.tolist(),
+            "y_std": p.y_std.tolist(),
+            "x_mean": p.x_mean.tolist(),
+            "swing_scale": p.swing_scale,
+            "thigh_sign": p.thigh_sign,
+            "batch": {k: v.numpy().tolist() for k, v in b.items()},
+        }
+        p.h.close()
+        return out
+
+    before = snapshot()
+    with h5py.File(person, "r+") as h:
+        for k in h["files"]:
+            if h["files"][k].attrs["mode"] == data.STAIRS:
+                h["files"][k]["x"][...] = 1e3
+                h["files"][k]["y"][...] = -1e3
+    assert snapshot() == before
