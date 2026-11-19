@@ -49,9 +49,9 @@ def joint_speed(x: np.ndarray, align: dict, joint: str) -> np.ndarray:
     """Joint angle speed from the gyros (deg/s), shape (T,)."""
     _, prox, dist = JOINTS[joint]
     s = align["joints"][joint]
-    w = s["sign_dist"] * segment_speed(x, dist, align["axes"][dist]) - s[
-        "sign_prox"
-    ] * segment_speed(x, prox, align["axes"][prox])
+    w = s["sign_dist"] * segment_speed(x, dist, s["axis_dist"]) - s["sign_prox"] * segment_speed(
+        x, prox, s["axis_prox"]
+    )
     return np.degrees(w)
 
 
@@ -68,35 +68,78 @@ def reference(x: np.ndarray, align: dict) -> np.ndarray:
     return np.column_stack([smooth(joint_speed(x, align, j)) for j in JOINTS])
 
 
-def fit_alignment(files: list[tuple[np.ndarray, np.ndarray]]) -> dict:
-    """Fit axes and signs on walking training files [(x raw, y deg), ...]."""
-    x = np.concatenate([f[0] for f in files])
-    axes = {seg: principal_axis(x[:, gyro_index(seg)].astype(float)).tolist() for seg in SEGMENTS}
-    align = {"axes": axes, "joints": {}}
-    ref = {
-        j: np.concatenate([angle_speed(fy)[:, i] for _, fy in files])
-        for j, (i, _, _) in JOINTS.items()
-    }
-    for joint in JOINTS:
-        best = None
-        for sp in (1, -1):
-            for sd in (1, -1):
-                align["joints"][joint] = {"sign_prox": sp, "sign_dist": sd}
-                w = np.concatenate([joint_speed(fx, align, joint) for fx, _ in files])
-                r = np.corrcoef(w, ref[joint])[0, 1]
-                if best is None or r > best[0]:
-                    best = (r, sp, sd)
-        align["joints"][joint] = {"sign_prox": best[1], "sign_dist": best[2]}
+def _best_signs(files, joint, a_prox, a_dist) -> tuple[int, int]:
+    i = JOINTS[joint][0]
+    ref = np.concatenate([angle_speed(fy)[:, i] for _, fy in files])
+    best = None
+    for sp in (1, -1):
+        for sd in (1, -1):
+            al = {
+                "joints": {
+                    joint: {
+                        "axis_prox": a_prox,
+                        "axis_dist": a_dist,
+                        "sign_prox": sp,
+                        "sign_dist": sd,
+                    }
+                }
+            }
+            w = np.concatenate([joint_speed(fx, al, joint) for fx, _ in files])
+            r = np.corrcoef(w, ref)[0, 1]
+            if best is None or r > best[0]:
+                best = (r, sp, sd)
+    return best[1], best[2]
+
+
+def _lsq_axes(files, joint) -> tuple[list, list]:
+    """Unit axes from a least-squares fit of both gyros to the smoothed true joint speed."""
+    i, prox, dist = JOINTS[joint]
+    x = np.concatenate(
+        [np.hstack([fx[:, gyro_index(dist)], -fx[:, gyro_index(prox)]]) for fx, _ in files]
+    )
+    y = np.radians(np.concatenate([smooth(angle_speed(fy)[:, i]) for _, fy in files]))
+    c = np.linalg.lstsq(x, y, rcond=None)[0]
+    return (c[3:] / np.linalg.norm(c[3:])).tolist(), (c[:3] / np.linalg.norm(c[:3])).tolist()
+
+
+def fit_alignment(
+    train: list[tuple[np.ndarray, np.ndarray]], val: list[tuple[np.ndarray, np.ndarray]]
+) -> dict:
+    """Per joint, two candidate alignments fitted on walking TRAINING files:
+      pca: each sensor's first principal gyro axis, signs by best correlation;
+      lsq: each sensor's unit axis from a least-squares fit to the true joint speed.
+    The one with the higher correlation on walking VALIDATION files is kept (no stair data).
+    """
+    x = np.concatenate([f[0] for f in train])
+    pca = {seg: principal_axis(x[:, gyro_index(seg)].astype(float)).tolist() for seg in SEGMENTS}
+    align = {"axes": pca, "joints": {}}
+    for joint, (_, prox, dist) in JOINTS.items():
+        cands = {}
+        sp, sd = _best_signs(train, joint, pca[prox], pca[dist])
+        cands["pca"] = {
+            "axis_prox": pca[prox],
+            "axis_dist": pca[dist],
+            "sign_prox": sp,
+            "sign_dist": sd,
+        }
+        ap, ad = _lsq_axes(train, joint)
+        cands["lsq"] = {"axis_prox": ap, "axis_dist": ad, "sign_prox": 1, "sign_dist": 1}
+        score = {}
+        for name, c in cands.items():
+            align["joints"][joint] = c
+            score[name] = check(val, align, [joint])[joint]["corr"]
+        best = max(score, key=score.get)
+        align["joints"][joint] = cands[best] | {"method": best, "val_corr": score}
     return align
 
 
-def check(files: list[tuple[np.ndarray, np.ndarray]], align: dict) -> dict:
+def check(files: list[tuple[np.ndarray, np.ndarray]], align: dict, joints=None) -> dict:
     """The required check with TRUE angles: correlation and relative residual per joint."""
-    w = np.concatenate([reference(fx, align) for fx, _ in files])
-    ref = np.concatenate([angle_speed(fy) for _, fy in files])
     out = {}
-    for k, (joint, (i, _, _)) in enumerate(JOINTS.items()):
-        a, b = w[:, k], ref[:, i]
+    for joint in joints or list(JOINTS):
+        i = JOINTS[joint][0]
+        a = np.concatenate([smooth(joint_speed(fx, align, joint)) for fx, _ in files])
+        b = np.concatenate([angle_speed(fy)[:, i] for _, fy in files])
         out[joint] = {
             "corr": float(np.corrcoef(a, b)[0, 1]),
             "rel_residual": float(np.sqrt(np.mean((a - b) ** 2)) / np.sqrt(np.mean(b**2))),

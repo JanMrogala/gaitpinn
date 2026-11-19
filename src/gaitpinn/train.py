@@ -53,11 +53,10 @@ class Person:
         y = np.concatenate([f["y"] for f in tr])
         self.y_mean, self.y_std = y.mean(0), y.std(0)
         pairs = [(f["x"], f["y"]) for f in tr]
-        self.align = gyro.fit_alignment(pairs)
+        val = [(f["x"], f["y"]) for f in map(self.load, self.split["val"])]
+        self.align = gyro.fit_alignment(pairs, val)
         self.gyro_scale = gyro.scales(pairs)
-        self.gyro_check = gyro.check(
-            [(f["x"], f["y"]) for f in map(self.load, self.split["val"])], self.align
-        )
+        self.gyro_check = gyro.check(val, self.align)
         self.gyro_ok = gyro.passes(self.gyro_check)
         # thigh angular speed sign: match d(hip)/dt on training files
         thigh = np.concatenate(
@@ -139,6 +138,7 @@ class Person:
             "dropped_files": self.dropped,
             "gyro_check_val": self.gyro_check,
             "gyro_ok": bool(self.gyro_ok),
+            "gyro_method": {j: v["method"] for j, v in self.align["joints"].items()},
             "swing_threshold": self.swing_thr,
         }
 
