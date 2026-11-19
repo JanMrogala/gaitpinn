@@ -387,6 +387,9 @@ def bout_curves(runs_dir, by, people, models=MODELS) -> dict:
                         if idx[0] < 0 or idx[-1] >= len(lab):
                             continue
                         sq.append(np.where(s["score"][idx, None], e2[idx], np.nan))
+                if not sq:  # no bouts of this kind for this person
+                    per_person.append(np.full((len(offs), 3), np.nan))
+                    continue
                 per_person.append(np.sqrt(np.nanmean(sq, axis=0)))
             a = np.nanmean(np.array(per_person), axis=0)
             out[m][kind] = {j: a[:, k].tolist() for k, j in enumerate(JOINTS)}

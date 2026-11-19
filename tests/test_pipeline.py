@@ -98,3 +98,68 @@ def test_extra_model_never_changes_the_preregistered_result(tmp_path):
     shutil.rmtree(tmp_path / "final-pinn_strong-AB01-s4-jx")  # 3) one strong run missing
     s = metrics.summary(tmp_path)
     assert _core(s) == ref and "pinn_strong" not in s["models"]
+
+
+def fake_xruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 11))):
+    rng = np.random.default_rng(1)
+    t = (np.arange(6000) - 3000) / 100
+    lab = np.where(t < 0, "walk", "stairascent").astype(object)
+    lab[3000:3200] = "walk-stairascent"
+    for i, p in enumerate(people):
+        for m, extra in [("base", 3.0), ("pinn", 3.0), ("pinn_cal", 2.0), ("base_cal", 3.0)]:
+            for seed in range(5):
+                y = rng.normal(0, 10, (6000, 3))
+                e = rng.normal(0, 1, (6000, 3)) * np.where(t[:, None] < 0, 1, extra)
+                score = np.ones(6000, bool)
+                stream = {
+                    "t": t,
+                    "y": y,
+                    "score": score,
+                    "label": lab.astype(str),
+                    "file": np.zeros(6000, int),
+                }
+                walk = (e[:3000], score[:3000], {"levelground": (e[:3000], score[:3000])})
+                met = metrics.run_metrics(stream, y + e, walk) | {"val_rmse": 2.0}
+                cal = {"name": "gyro-s100-mu1"} if m.endswith("_cal") else None
+                rec = {
+                    "run_id": f"xfinal-{m}-{p}-s{seed}-jx",
+                    "kind": "xfinal",
+                    "status": "done",
+                    "model": m,
+                    "person": p,
+                    "seed": seed,
+                    "fold": {"fold": i % 4},
+                    "calibration": cal,
+                    "gate": {"knee": True, "ankle": i % 3 > 0} if cal else None,
+                    "metrics": met,
+                }
+                out = runs.write_run(d, rec)
+                np.savez_compressed(
+                    out / "stream.npz",
+                    t=t,
+                    y=y,
+                    pred=y + e,
+                    score=score,
+                    label=lab.astype("S"),
+                    file_idx=np.zeros(6000, np.int16),
+                )
+
+
+def test_study2_summary_and_page(tmp_path):
+    fake_xruns(tmp_path)
+    s = metrics.xsummary(tmp_path)
+    assert set(s["tests"]) == {"base vs pinn", "base vs pinn_cal", "pinn vs pinn_cal"}
+    assert s["tests"]["base vs pinn_cal"]["verdict"] == "pinn_cal is better"
+    assert s["tests"]["base vs pinn"]["verdict"] == "no clear difference"
+    assert all(w["p_holm"] >= w["p"] for w in s["tests"].values())
+    assert s["calibration"]["pinn_cal"]["joint_checks"] == 2 * 10 * 5
+    s = json.loads((tmp_path / "summary" / "results2.json").read_text())
+    figs = {
+        "error_over_time": plot.error_over_time(s, models=["base", "pinn", "pinn_cal"]),
+        "error_by_bout": plot.error_by_bout(s, models=["base", "pinn", "pinn_cal"]),
+        "control": plot.error_over_time(s, models=["base", "base_cal", "pinn_cal"]),
+    }
+    (tmp_path / "summary" / "figures2.json").write_text(json.dumps(figs))
+    site.build(tmp_path, tmp_path / "site")
+    page = (tmp_path / "site" / "study2.html").read_text()
+    assert "pinn_cal is better" in page and "Holm-adjusted" in page and "fold 3" in page

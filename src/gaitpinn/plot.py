@@ -14,11 +14,19 @@ import numpy as np
 
 from gaitpinn.test import JOINTS, MODELS
 
-COLORS = {"base": "#4C72B0", "pinn": "#DD8452", "pinn_strong": "#55A868"}
+COLORS = {
+    "base": "#4C72B0",
+    "pinn": "#DD8452",
+    "pinn_strong": "#55A868",
+    "pinn_cal": "#C44E52",
+    "base_cal": "#8172B3",
+}
 BANDS = {
     "base": "rgba(76,114,176,0.18)",
     "pinn": "rgba(221,132,82,0.18)",
     "pinn_strong": "rgba(85,168,104,0.18)",
+    "pinn_cal": "rgba(196,78,82,0.18)",
+    "base_cal": "rgba(129,114,179,0.18)",
 }
 LAYOUT = {
     "template": "plotly_white",
@@ -201,6 +209,23 @@ def main() -> None:
         figs[f"error_by_bout_{m}"] = error_by_bout(s, models=["base", m])
     (a.runs / "summary" / "figures.json").write_text(json.dumps(figs))
     (a.runs / "summary" / "people.json").write_text(json.dumps(people(a.runs, s)))
+    r2 = a.runs / "summary" / "results2.json"
+    if r2.exists():  # study 2
+        s2 = json.loads(r2.read_text())
+        main3 = [m for m in ["base", "pinn", "pinn_cal"] if m in s2["models"]]
+        figs2 = {
+            "error_over_time": error_over_time(
+                s2, models=main3, title="New people: error over time since the switch to stairs"
+            ),
+            "error_by_bout": error_by_bout(s2, models=main3),
+        }
+        if "base_cal" in s2["models"]:
+            figs2["control"] = error_over_time(
+                s2,
+                models=["base", "base_cal", "pinn_cal"],
+                title="Control: label-free calibration of base (gyro term only) vs pinn_cal",
+            )
+        (a.runs / "summary" / "figures2.json").write_text(json.dumps(figs2))
     print("wrote figures.json and people.json")
 
 

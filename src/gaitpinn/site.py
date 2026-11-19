@@ -20,6 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 PAGES = [
     ("index.html", "Results"),
     ("people.html", "People"),
+    ("study2.html", "Study 2"),
     ("runs.html", "Runs"),
     ("method.html", "Method"),
 ]
@@ -293,6 +294,90 @@ const sel=document.getElementById('who'); sel.onchange=()=>draw(sel.value); draw
     return body, True
 
 
+def study2_body(runs_dir: Path) -> tuple[str, bool]:
+    """Study 2 (PLAN2.md): one model for many people, tested on unseen people."""
+    s = load_summary(runs_dir, "results2")
+    figs = load_summary(runs_dir, "figures2")
+    intro = (
+        "<h1>Study 2: one model for many people</h1><p>One model is trained on many people "
+        "(walking, ramps and stairs) and tested on people it never saw, in 4 folds so that "
+        "every person is tested once. <code>pinn_cal</code> is <code>pinn</code> self-"
+        "calibrated to each new person on 2 minutes of their <b>unlabelled</b> walking, using "
+        "only the physics losses. Pre-registered in <code>PLAN2.md</code>.</p>"
+    )
+    if s is None or figs is None:
+        return intro + EMPTY, False
+    n, joints = s["numbers"], ["hip", "knee", "ankle"]
+    models = s["models"]
+    lines = ""
+    for name, w in s["tests"].items():
+        a, b = name.split(" vs ")
+        lines += (
+            f"<li><b>{html.escape(name)}:</b> {html.escape(w['verdict'])} (mean error on stairs "
+            f"{n[a]['error_after_switch_mean3']:.2f}° vs {n[b]['error_after_switch_mean3']:.2f}°; "
+            f"Wilcoxon p = {w['p']:.3f}, Holm-adjusted p = {w['p_holm']:.3f}, r = "
+            f"{w['rank_biserial_r']:+.2f}, Hodges–Lehmann {w['hodges_lehmann']:+.2f}° "
+            f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}).</li>"
+        )
+    head = "".join(f"<th>{j}</th>" for j in joints)
+    rows = ""
+    for m in models:
+        e = "".join(f"<td>{n[m]['error_after_switch'][j]:.2f}</td>" for j in joints)
+        u = "".join(f"<td>{n[m]['error_ascent'][j]:.2f}</td>" for j in joints)
+        w = "".join(f"<td>{n[m]['walk_error'][j]:.2f}</td>" for j in joints)
+        rows += (
+            f"<tr><td><b>{m}</b></td>{e}<td>{n[m]['error_after_switch_mean3']:.2f}</td>{u}{w}</tr>"
+        )
+    folds = "".join(
+        f"<tr><td>{html.escape(k)}</td>"
+        + "".join(f"<td>{v:+.2f}</td>" for v in w["per_fold_median"].values())
+        + "</tr>"
+        for k, w in s["tests"].items()
+    )
+    nf = len(next(iter(s["tests"].values()))["per_fold_median"])
+    fold_head = "".join(f"<th>fold {i}</th>" for i in range(nf))
+    cal = "".join(
+        f"<li><code>{m}</code>: settings by fold {html.escape(json.dumps(c['settings_by_fold']))}"
+        f"; gyro term switched off by the label-free gate for {c['joints_gated_off']} of "
+        f"{c['joint_checks']} joint checks.</li>"
+        for m, c in s["calibration"].items()
+    )
+    sec = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>{v['hodges_lehmann']:+.2f}</td>"
+        f"<td>{v['rank_biserial_r']:+.2f}</td><td>{v['p']:.3f}</td></tr>"
+        for k, v in s["secondary"].items()
+    )
+    control = '<div data-fig="control" style="height:520px"></div>' if "control" in figs else ""
+    body = f"""{intro}
+<div class=note><b>Pre-registered tests</b> (paired across people, Holm-corrected over the
+three):<ul>{lines}</ul></div>
+<div data-fig="error_over_time" style="height:520px"></div>
+<h2>Numbers (mean over people)</h2>
+<div class=wrap><table><thead>
+<tr><th rowspan=2>Model</th><th colspan=4>Error after switch (°)</th>
+<th colspan=3>Climbing up (°)</th><th colspan=3>Walking error (°)</th></tr>
+<tr>{head}<th>mean</th>{head}{head}</tr></thead><tbody>{rows}</tbody></table></div>
+<h2>Per fold</h2>
+<p>People in a fold share the same trained models, so the pooled test treats them as more
+independent than they are. Median difference (first − second, °) per fold:</p>
+<div class=wrap><table><thead><tr><th>test</th>{fold_head}</tr></thead>
+<tbody>{folds}</tbody></table></div>
+<h2>Self-calibration</h2><ul>{cal}</ul>
+{control}
+<details><summary>Secondary results</summary><div class=wrap><table>
+<thead><tr><th>comparison / measure / joint</th><th>HL diff</th><th>r</th><th>p</th></tr>
+</thead><tbody>{sec}</tbody></table></div></details>
+<h2>Around each stair entry</h2>
+<div data-fig="error_by_bout" style="height:460px"></div>
+<script>
+const F={json.dumps(figs)};
+const cfg={{responsive:true,displaylogo:false}};
+document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
+  Plotly.newPlot(el,f.data,f.layout,cfg);}});
+</script>"""
+    return body, True
+
+
 def runs_body(runs_dir: Path) -> str:
     recs = runrec.load_runs(runs_dir)
     if not recs:
@@ -338,6 +423,8 @@ def build(runs_dir: Path, out: Path) -> None:
     ppl, ppl_plot = people_body(runs_dir)
     (out / "index.html").write_text(page("index.html", "Results", res, res_plot))
     (out / "people.html").write_text(page("people.html", "People", ppl, ppl_plot))
+    s2, s2_plot = study2_body(runs_dir)
+    (out / "study2.html").write_text(page("study2.html", "Study 2", s2, s2_plot))
     (out / "runs.html").write_text(page("runs.html", "Runs", runs_body(runs_dir)))
     (out / "method.html").write_text(page("method.html", "Method", method_body()))
     (out / ".nojekyll").write_text("")
