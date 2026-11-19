@@ -224,3 +224,17 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
     same tuning effort. The physics loss in the final `pinn` is therefore weak.
   - Code fixes with no effect on any number: the `__main__` block in `test.py` moved below
     the study-2 functions, and early smoke records with no `status` field are skipped.
+- **2026-11-20, calibration choice done (array 23872565). Choices frozen here, before any
+  final run.** From `runs/chosen_x.json`, mean validation score:
+
+  | Fold | `base_cal` setting (none → chosen) | `pinn_cal` setting (none → chosen) |
+  |---|---|---|
+  | 0 | gyro, 100 steps, μ 10 (5.94° → 5.90°) | gyro, 300 steps, μ 1 (6.20° → 6.14°) |
+  | 1 | gyro, 100 steps, μ 10 (6.45° → 6.44°) | gyro + swing, 100 steps, μ 10 (6.78° → 6.76°) |
+  | 2 | gyro, 100 steps, μ 1 (5.40° → 5.33°) | gyro + swing, 300 steps, μ 1 (4.99° → 4.82°) |
+  | 3 | gyro, 300 steps, μ 1 (7.39° → 7.31°) | gyro, 100 steps, μ 1 (7.44° → 7.41°) |
+
+  - "No calibration" never won, but the gains on validation people are small (0.01–0.16°).
+  - Diagnostic: for all 12 validation people, both physics terms score lower at the true
+    angles than at the original predictions, so calibration has a reason to help.
+  - Final batch: 40 tasks, 1.5 h limit each (at most 30 GPU-hours).
