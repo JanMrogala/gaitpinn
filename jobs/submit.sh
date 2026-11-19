@@ -17,7 +17,8 @@ case "$what" in
       test -f "$RUNS_LOCAL/chosen_x.json" || { echo "run: python -m gaitpinn.test xselect" >&2; exit 1; }
       rsync -a "$RUNS_LOCAL/chosen_x.json" "$LUMI_HOST:$SCR/"
     fi
-    part=small-g; time="${GP_TIME:-04:00:00}"; script="--array=0-$((n - 1)) jobs/xtrain.sbatch"
+    part=small-g; time="${GP_TIME:-04:00:00}"
+    script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"  # GP_ARRAY: e.g. a pilot subset
     args=""; extra=",GP_KIND=$what" ;;
   final-strong)
     # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
