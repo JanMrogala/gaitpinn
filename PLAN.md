@@ -318,3 +318,20 @@ What was actually used, checked on the system on 2026-11-19:
   directory) blocked all logins from about 02:45 CET. Conversion code was developed meanwhile
   on a local copy of one person (AB25), outside the repo. All study data are still prepared on
   LUMI.
+- **2026-11-19, gyro alignment fix: 6 Hz smoothing** (walking data of AB25 only, before any
+  model). Without smoothing, AB25 failed the required gyro check at the ankle: on validation the
+  relative residual was 0.84 and the gyro speed was 1.5× the IK speed, because of heel-strike
+  spikes that the 6 Hz-filtered markers lack.
+  - With a zero-phase 6 Hz low-pass on the gyro joint speed: knee r = 0.95 (residual 0.33),
+    ankle r = 0.95 (residual 0.38). Both pass.
+  - The smoothing is used only inside the training loss, never as a model input.
+- **2026-11-19, swing term details** (fixed before training):
+  - The thigh angle is the predicted hip angle (pelvis tilt neglected). The thigh angular speed
+    comes from the aligned thigh gyro. Hip linear acceleration is neglected.
+  - The foot centre of mass sits at the ankle (Winter tables otherwise).
+  - **Muscles:** BF, ST, gracilis and MG are flexors (+); VM, VL and RF are extensors (−).
+    TA, soleus, glut. med. and the oblique are not used.
+  - **Activation:** envelope / its 95th percentile on walking training files, then a 40 ms
+    first-order filter.
+  - **Swing:** foot gyro norm above its 60th percentile on walking training files, so about
+    40% of walking samples count as swing, for at least 100 ms.
