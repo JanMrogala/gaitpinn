@@ -16,5 +16,6 @@ singularity exec "$SIF" bash -c '
   set -e
   [ -d "$ROOT/venv" ] || python -m venv --system-site-packages "$ROOT/venv"
   source "$ROOT/venv/bin/activate"
-  PYTHONPATH="$ROOT/code/$COMMIT/src" python -c "import torch, gaitpinn.train, gaitpinn.runs; print(\"torch\", torch.__version__)"'
+  export PYTHONPATH="$ROOT/code/$COMMIT/src:\${PYTHONPATH:-}"
+  python -c "import torch, gaitpinn, gaitpinn.train, gaitpinn.runs; print(\"torch\", torch.__version__, \"gaitpinn\", gaitpinn.__file__)"'
 REMOTE

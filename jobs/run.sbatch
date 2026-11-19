@@ -16,7 +16,8 @@ trap 'rm -rf "$MIOPEN_USER_DB_PATH"' EXIT
 CODE="$GP_ROOT/code/$GP_COMMIT"
 if [ "$(cat "$CODE/COMMIT")" != "$GP_COMMIT" ]; then echo "COMMIT mismatch in $CODE" >&2; exit 1; fi
 cd "$CODE"
-export PYTHONPATH="$CODE/src"
+# The container sets its own PYTHONPATH (where torch lives); add our code in front of it.
 singularity exec "$GP_SIF" bash -c \
-  'source "$1/venv/bin/activate"; shift; exec python -m gaitpinn.train "$@"' \
-  _ "$GP_ROOT" --runs "$GP_SCR/runs" --code "$CODE" "$@"
+  'source "$1/venv/bin/activate"; export PYTHONPATH="$2/src:${PYTHONPATH:-}"; shift 2
+   exec python -m gaitpinn.train "$@"' \
+  _ "$GP_ROOT" "$CODE" --runs "$GP_SCR/runs" --code "$CODE" "$@"
