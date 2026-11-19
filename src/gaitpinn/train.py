@@ -395,7 +395,7 @@ def main() -> None:
         if a.max_epochs:
             c = c | {"max_epochs": a.max_epochs}
         if i is not None:
-            c = c | {"tag": f"c{i:02d}"}
+            c = c | {"tag": f"r{c.get('round', 1)}c{i:02d}"}
         rec = record(a.kind, c, p.name, seed, a.code, {"person_info": p.info()})
         out_dir = runs.write_run(a.runs, rec)
         model, fit_out = fit(c, p, seed, dev)

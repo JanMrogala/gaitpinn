@@ -106,6 +106,8 @@ def select(runs_dir: Path) -> dict:
     """Tuning: per model, the grid configuration with the lowest mean walking-validation
     angle RMSE across people. Writes runs/chosen_<model>.json and summary/tuning.json."""
     tune = [r for r in load(runs_dir, "tune") if r["person_info"]["gyro_ok"]]
+    last = max(r["config"].get("round", 1) for r in tune)  # only the latest tuning round
+    tune = [r for r in tune if r["config"].get("round", 1) == last]
     out = {}
     for m in MODELS:
         by_tag: dict[str, list] = {}
@@ -306,7 +308,8 @@ def error_curves(runs_dir, by, people, H) -> dict:
             for r in by[(m, p)]:
                 s = _stream(runs_dir, r["run_id"])
                 roll = rolling(s["pred"].astype(float) - s["y"], s["score"])
-                idx = np.searchsorted(np.round(s["t"], 2), t_grid)
+                i0 = int(np.sum(s["t"] < 0))  # index of t = 0; samples are 1/RATE apart
+                idx = i0 + np.round(t_grid * data.RATE).astype(int)
                 seeds.append(roll[idx])
             per_person.append(np.nanmean(seeds, axis=0))
         a = np.array(per_person)  # (people, T, 3)

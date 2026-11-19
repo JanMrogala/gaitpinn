@@ -1,15 +1,16 @@
 # Data-only model. Shared settings are identical in pinn.yaml (PLAN.md, "Models").
 model: base
+round: 2  # tuning round (PLAN.md decisions log)
 width: 64
 levels: 6
 kernel: 3
-dropout: 0.1
+dropout: 0.0
 lr: 1.0e-3
 weight_decay: 0.0
 batch_size: 64
 chunk_s: 4.0
 steps_per_epoch: 50
-max_epochs: 60
+max_epochs: 150
 patience: 8
 lam: 0.0
 # Tuning grid (12 configurations, same count as pinn).

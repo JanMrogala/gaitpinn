@@ -356,3 +356,26 @@ What was actually used, checked on the system on 2026-11-19:
   array task trains one (model, person) pair on 1 GCD: either all 12 tuning configurations or
   the 5 final seeds, one after another. That gives 44 tasks per batch. Each run still uses
   exactly one GCD.
+- **2026-11-19, local AB25 development runs.** Two 2-epoch runs on AB25, used to test the code,
+  produced test-stream predictions. Their stair numbers were never printed or looked at, and
+  the runs were deleted.
+- **2026-11-19, tuning round 2** (declared before it runs; walking validation only, no stair data
+  seen). Round 1 (planned grid) chose `base` c08 (2.41°) and `pinn` c03 (λ = 0.03, 3.76°).
+  `pinn` got worse as λ grew, and a walking-only check on AB25 showed why:
+  - **Loss scale:** the physics terms sit at about 2.6 even with the true angles (gyro 0.12,
+    swing 2.57). `base`'s converged angle loss is about 0.015, so λ ≥ 0.03 lets physics
+    dominate.
+  - **Dropout:** with dropout on, the physics terms were 1.6–2× larger, because they
+    differentiate the output in time.
+  - **Epoch cap:** `pinn` was still improving at the 60-epoch cap; `base` stops near 28.
+
+  Round 2 uses the same settings for both models: dropout 0 and a cap of 150 epochs. Each model
+  gets 12 new configurations:
+  - `base`: the same grid as before;
+  - `pinn`: λ ∈ {0.001, 0.003, 0.01}, so that λ × the floor spans about 0.1–2× the angle loss.
+
+  Only round-2 runs are used for selection. This is the last tuning round: if the smallest λ
+  wins, it is used as is. Both rounds count towards the GPU budget and are reported.
+- **2026-11-19, swing-model fit.** With the true angles, the swing residual is about 2.6 times
+  the std of `I·knee_acc`. That is above what a trained model reaches, so the simple pendulum
+  in the task spec explains true swing motion poorly. Reported as a limitation, not changed.

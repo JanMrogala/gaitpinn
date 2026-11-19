@@ -1,21 +1,22 @@
 # Same network and settings as base.yaml, plus the physics loss (PLAN.md, "pinn physics loss").
 model: pinn
+round: 2  # tuning round (PLAN.md decisions log)
 width: 64
 levels: 6
 kernel: 3
-dropout: 0.1
+dropout: 0.0
 lr: 1.0e-3
 weight_decay: 0.0
 batch_size: 64
 chunk_s: 4.0
 steps_per_epoch: 50
-max_epochs: 60
+max_epochs: 150
 patience: 8
-lam: 0.3
+lam: 0.003
 # Starting values of the learned swing-term parameters (softplus inputs for w, k, b).
 swing_init: {w: 0.0, k: -2.0, b: -2.0, q0: 0.1}
 # Tuning grid (12 configurations, same count as base).
 grid:
   lr: [1.0e-3, 3.0e-3]
   width: [32, 64]
-  lam: [0.03, 0.3, 3.0]
+  lam: [0.001, 0.003, 0.01]
