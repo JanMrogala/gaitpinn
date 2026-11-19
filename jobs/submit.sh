@@ -10,6 +10,12 @@ case "$what" in
   prepare)
     part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args="" ;;
   tune|final)
+    if [ "$what" = final ]; then  # the configurations chosen on walking validation
+      for m in base pinn; do
+        test -f "$RUNS_LOCAL/chosen_$m.json" || { echo "missing chosen_$m.json" >&2; exit 1; }
+      done
+      rsync -a "$RUNS_LOCAL"/chosen_base.json "$RUNS_LOCAL"/chosen_pinn.json "$LUMI_HOST:$SCR/"
+    fi
     # 2 models x number of people, one array task each
     n=$(ssh "$LUMI_HOST" "ls '$SCR/data/h5'/AB*.h5 | wc -l")
     part=small-g; time="${GP_TIME:-02:00:00}"; script="--array=0-$((2 * n - 1)) jobs/train.sbatch"
