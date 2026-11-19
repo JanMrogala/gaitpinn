@@ -6,7 +6,9 @@ COMMIT="$(git -C "$REPO" rev-parse HEAD)"
 case "$what" in
   smoke)
     part=dev-g; time=00:10:00
-    args="--config configs/base.yaml --smoke --seed 0" ;;
+    script=jobs/run.sbatch; args="--config configs/base.yaml --smoke --seed 0" ;;
+  prepare)
+    part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args="" ;;
   *) echo "unknown job: $what" >&2; exit 1 ;;
 esac
 ssh "$LUMI_HOST" "test -f '$ROOT/code/$COMMIT/COMMIT' || { echo 'commit not synced' >&2; exit 1; }
@@ -14,4 +16,4 @@ ssh "$LUMI_HOST" "test -f '$ROOT/code/$COMMIT/COMMIT' || { echo 'commit not sync
   --partition=$part --time=$time --job-name=gp-$what \
   --output='$SCR/logs/%x-%j.out' \
   --export=ALL,GP_ROOT='$ROOT',GP_SCR='$SCR',GP_SIF='$SIF',GP_COMMIT='$COMMIT' \
-  jobs/run.sbatch $args"
+  $script $args"

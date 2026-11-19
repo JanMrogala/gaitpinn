@@ -66,6 +66,17 @@ Stair data never touches training, tuning, normalization or **any calibration**:
 All of these come from walking training files only, or are fixed in this plan. A test checks
 that the file IDs feeding each of these steps contain no stair file.
 
+### Target quality (per file)
+
+Some files have broken IK solutions. AB25's `LevelGround_cw_slow_01_05`, for example, has the
+hip stuck at 120° for 30 s. A file of any mode is left out if:
+
+- any target angle is flat (std < 0.5°); or
+- more than 1% of its samples lie outside generous joint limits: hip −60…130°,
+  knee −150…30°, ankle −60…60°.
+
+This looks at the target only, never at predictions. Every dropped file is logged.
+
 ### Exclusion (decided before any stairs prediction)
 
 A person is excluded if, on walking data only, any of these holds:
@@ -294,3 +305,16 @@ What was actually used, checked on the system on 2026-11-19:
   model was trained. The alternative was to keep only the climbing segments.
 - **2026-11-19, time limit:** the whole study must take under 24 h of wall-clock time. Set by
   the user, who will relax it if it limits the study too much.
+- **2026-11-19, target quality rule** (above). Added after AB25's broken
+  `LevelGround_cw_slow_01_05` turned up during conversion, before any model was trained.
+- **2026-11-19, gyro alignment re-checked on walking training files only (AB25).**
+  - Knee: `d(knee)/dt` correlates with `shank − thigh` gyro on axis Y at r = −0.87 and on Z
+    at r = +0.80 (mean over 28 files).
+  - Ankle: axis Y, r = −0.86.
+
+  The sagittal axis is a mix of sensor axes, with a sign that has to be found. This supports
+  per-sensor alignment from walking data. All people are checked in step 5.
+- **2026-11-19, LUMI outage.** LUMI filesystem problems (lustrep3, which holds the home
+  directory) blocked all logins from about 02:45 CET. Conversion code was developed meanwhile
+  on a local copy of one person (AB25), outside the repo. All study data are still prepared on
+  LUMI.
