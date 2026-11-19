@@ -42,7 +42,7 @@ axes.
 
 - **Walking files:** all `treadmill` and `levelground` files.
   - **By file, never by window,** separately for each mode, with split seed 0. Validation gets
-    `max(1, round(0.15·n))` files, walking test the same number, and training the rest.
+    `max(1, floor(0.15·n + 0.5))` files, walking test the same number, and training the rest.
   - **One split per person,** shared by `base`, `pinn`, the tuning seed and all 5 final seeds.
   - Files are kept whole, including the stand and turn spans inside level-ground circuits.
 - **Stair files:** test only.
@@ -108,8 +108,14 @@ The stream has two parts:
 
 ### `pinn` physics loss
 
-`pinn` loss = angle MSE + λ × (gyro term + swing term). Each term is in normalized units, lives
-in its own file and has a test.
+`pinn` loss = angle MSE + λ × (gyro term + swing term). Each term lives in its own file and has
+a test. All three are made unit-free, so that λ means the same for every person:
+
+- **Angle MSE:** computed on normalized angles.
+- **Gyro term:** the residual is divided by the std of `d(true angle)/dt` in walking training
+  data.
+- **Swing term:** each residual is divided by the std of `I·knee_acc` from the true knee angle
+  during swing in walking training data.
 
 **1. Gyro term** (knee: thigh and shank IMUs; ankle: shank and foot IMUs)
 
@@ -124,7 +130,10 @@ in its own file and has a test.
 - **Required check:** with the **true** angles on walking **validation** files, both of these
   must hold for every person and joint:
   - correlation ≥ 0.85;
-  - RMS of (`gyro speed − d(true angle)/dt`) ≤ 0.5 × RMS of `d(true angle)/dt`.
+  - RMS of (`gyro speed − d(true angle)/dt`) ≤ 0.7 × RMS of `d(true angle)/dt`.
+
+  With no free scale, a correlation of 0.85 and an amplitude ratio of about 1.15 already give a
+  residual of about 0.6, so 0.5 would fail people whose correlation passes.
 
   If not, fix the alignment first. Then apply the exclusion rule.
 
