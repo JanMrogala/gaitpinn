@@ -18,10 +18,19 @@ make check
 On LUMI (all settings come from `.env.local`, which is not committed):
 
 ```sh
-jobs/sync.sh                 # copy a clean commit to project storage
-jobs/submit.sh smoke         # 1-minute dev-g test run
-jobs/fetch.sh                # copy run results back to ../runs (no checkpoints)
-make site                    # build the website into ../site
+jobs/sync.sh                  # copy the current clean commit to project storage
+jobs/setup_lumi.sh            # once: container copy + venv
+jobs/download.sh              # once: Camargo et al. 2021 into scratch
+jobs/submit.sh prepare        # unzip + convert to one HDF5 file per person (dev-g)
+jobs/submit.sh tune           # 2 models x 22 people x 12 configs, walking validation only
+jobs/fetch.sh                 # copy run records back to ../runs, GPU-hour ledger
+python -m gaitpinn.test select --runs ../runs     # chosen config per model
+# copy ../runs/chosen_*.json to scratch, then:
+jobs/submit.sh final          # 2 models x 22 people x 5 seeds + test stream
+jobs/fetch.sh
+python -m gaitpinn.test summary --runs ../runs    # numbers, Wilcoxon test, curves
+python -m gaitpinn.plot --runs ../runs            # figures
+make site                                         # website into ../site
 ```
 
 ## Results
