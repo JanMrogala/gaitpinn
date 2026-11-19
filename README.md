@@ -52,11 +52,26 @@ Every number above comes from `runs/summary/results.json`, which `gaitpinn.test 
 from the 220 final runs (`final-<model>-<person>-s<seed>-j23860765_<task>`, 2 models × 22
 people × 5 seeds). The website shows the plots and per-person run IDs.
 
+### Added after the main result: a strongly physics-constrained model
+
+Not pre-registered: requested after the result above was known. `pinn_strong` is the tuned
+`pinn` network with a fixed, large physics weight (λ = 0.1, chosen from walking-only loss
+scales). It was compared with `base` by the same test on the same 16 people.
+
+- **Error after switch:** `pinn_strong` 12.14°, `base` 11.38°. Wilcoxon p = 0.044,
+  r = -0.57, Hodges–Lehmann difference (base − pinn_strong) -0.77° (95% CI -1.46 to
+  -0.09).
+- **Where the difference is:** mostly the knee (17.8° vs 15.9°, p = 0.011), on both climbing up and
+  climbing down.
+- **Reading:** strong physics made stair errors slightly worse, not better. This is a single
+  added comparison that was not pre-registered, so treat p ≈ 0.04 as suggestive.
+- **Runs:** `final-pinn_strong-<person>-s<seed>-j23861743_<task>` (110 runs).
+
 ### Limitations
 
 - **Weak physics:** walking-validation tuning chose the smallest physics weight tried
-  (λ = 0.001, the edge of the grid), so `pinn` is close to `base` by construction. The study
-  does not test a strongly physics-constrained model.
+  (λ = 0.001, the edge of the grid), so `pinn` is close to `base` by construction. The strongly
+  constrained `pinn_strong` (above) was added afterwards to cover the other end.
 - **Swing model:** the simple swing pendulum from the plan explains real knee swing poorly.
   Even with the true angles, its residual is about 2.6× the std of `I·knee_acc`.
 - **Time to fail:** both models cross the threshold about 2 s after the switch, before the
