@@ -121,8 +121,20 @@ class Person:
             vals.append(v.numpy())
         return float(np.concatenate(vals).std())
 
+    def speed_check(self) -> dict:
+        """Validation/test treadmill speeds must lie inside the training speed range."""
+
+        def rng(part):
+            a = [self.h["files"][k].attrs for k in self.split[part] if self.modes[k] == "treadmill"]
+            return min(x["speed_min"] for x in a), max(x["speed_max"] for x in a)
+
+        tr, va, te = rng("train"), rng("val"), rng("test")
+        ok = all(tr[0] <= r[0] and r[1] <= tr[1] for r in (va, te))
+        return {"train": tr, "val": va, "test": te, "ok": bool(ok)}
+
     def info(self) -> dict:
         return {
+            "speed_check": self.speed_check(),
             "files": {p: len(v) for p, v in self.split.items()},
             "dropped_files": self.dropped,
             "gyro_check_val": self.gyro_check,
@@ -355,7 +367,7 @@ def main() -> None:
     ap.add_argument("--person", default="none")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--seeds", type=int, nargs="*")
-    ap.add_argument("--kind", choices=["smoke", "tune", "final"], default="final")
+    ap.add_argument("--kind", choices=["smoke", "check", "tune", "final"], default="final")
     ap.add_argument("--chosen", type=Path, help="final runs: JSON with the chosen config")
     ap.add_argument("--h5", type=Path, help="folder with <person>.h5")
     ap.add_argument("--runs", type=Path, required=True, help="folder for run records")
@@ -370,6 +382,9 @@ def main() -> None:
         return smoke_main(cfg, a)
     dev = pick_device()
     p = Person(a.h5 / f"{a.person}.h5")
+    if a.kind == "check":  # walking data only: split, dropped files, speed and gyro checks
+        print(json.dumps({"person": p.name, **p.info()}), flush=True)
+        return None
     if a.kind == "tune":
         todo = [(i, c, TUNE_SEED) for i, c in enumerate(grid(cfg))]
     else:

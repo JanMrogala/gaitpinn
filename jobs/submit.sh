@@ -9,11 +9,16 @@ case "$what" in
     script=jobs/run.sbatch; args="--config configs/base.yaml --smoke --seed 0" ;;
   prepare)
     part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args="" ;;
+  tune|final)
+    # 2 models x number of people, one array task each
+    n=$(ssh "$LUMI_HOST" "ls '$SCR/data/h5'/AB*.h5 | wc -l")
+    part=small-g; time="${GP_TIME:-02:00:00}"; script="--array=0-$((2 * n - 1)) jobs/train.sbatch"
+    args=""; extra=",GP_KIND=$what" ;;
   *) echo "unknown job: $what" >&2; exit 1 ;;
 esac
 ssh "$LUMI_HOST" "test -f '$ROOT/code/$COMMIT/COMMIT' || { echo 'commit not synced' >&2; exit 1; }
   cd '$ROOT/code/$COMMIT' && sbatch --parsable --account='$LUMI_PROJECT' \
   --partition=$part --time=$time --job-name=gp-$what \
-  --output='$SCR/logs/%x-%j.out' \
-  --export=ALL,GP_ROOT='$ROOT',GP_SCR='$SCR',GP_SIF='$SIF',GP_COMMIT='$COMMIT' \
+  --output='$SCR/logs/%x-%A_%a.out' \
+  --export=ALL,GP_ROOT='$ROOT',GP_SCR='$SCR',GP_SIF='$SIF',GP_COMMIT='$COMMIT'${extra:-} \
   $script $args"
