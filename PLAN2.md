@@ -197,3 +197,14 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
   copied locally only to test the code, produced stream predictions for AB24, a fold-0 test
   person. Nobody looked at them, and they were deleted. The code now refuses to run if the folds
   differ from the table above, and refuses to hand on incomplete per-fold choices.
+- **2026-11-19, pilot (tuning tasks 3 and 16, fold 0, array 23869610).**
+  - Timing: about 4 min per run (prep 18 s, training about 200 s). Early stopping hit after
+    17–18 epochs for both models, far below the cap.
+  - The fold's 10 physics people match study 1's gyro check.
+  - At λ = 0.01 the physics part is about half the angle loss, so the grid spans weak to strong.
+  - Estimate for the remaining 94 tuning tasks: about 4 GPU-hours, at most 47 with the 1 h
+    limit.
+  - An earlier, mistaken full-array submission (23869604) was cancelled before any task
+    started.
+  - The pilot runs are genuine tuning runs at the same commit; the full batch skips their
+    indices.
