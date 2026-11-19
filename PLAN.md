@@ -90,8 +90,8 @@ The stream has two parts:
 
 - The models see the stream as one continuous signal, as a wearable device would. Their
   context and the rolling error window run across file joins without reset.
-- **Open choice, to be confirmed by the user before training (see the log):** either the stairs
-  part is the whole stair files, or only their climbing segments.
+- The stairs part is the **whole stair files**, joined back to back. Each holds an approach,
+  the ascent, a stand and turn on the top platform, the descent and walk-off. Chosen by the user.
 
 ## Models
 
@@ -266,7 +266,8 @@ What was actually used, checked on the system on 2026-11-19:
   - **Estimate first:** each batch gets a GPU-hour estimate before submission, based on measured
     per-run times. Tuning runs count too.
   - **Ask first:** before any batch over 20% of what remains.
-  - **Time:** each batch must finish within 24 h of submission, including queue time.
+  - **Time:** the whole study, from data download to the final graph, must take under 24 h of
+    wall-clock time. Tuning and seeds are sized to fit, measured per-run times first.
 - **MIOpen:** `MIOPEN_USER_DB_PATH` and `MIOPEN_CUSTOM_CACHE_DIR` point to a job-local folder
   under `/tmp`.
 
@@ -282,10 +283,14 @@ What was actually used, checked on the system on 2026-11-19:
   These findings shaped three choices:
   - the per-person sensor alignment;
   - the `error_by_bout` window (−2 to +6 s);
-  - the open choice about the stairs part.
+  - the question to the user about the stairs part.
 
   No number in this plan was tuned on those files. In step 4, the need for per-person alignment
   is re-checked on **walking training files only**, and the result is logged here.
 - **2026-11-19, walking data.** The training task is level walking: treadmill plus level-ground
   circuits. Ramps are not used. Agreed with the user.
 - **2026-11-19, one model per person and seed.** Agreed with the user.
+- **2026-11-19, stairs part = whole stair files** (option A), chosen by the user before any
+  model was trained. The alternative was to keep only the climbing segments.
+- **2026-11-19, time limit:** the whole study must take under 24 h of wall-clock time. Set by
+  the user, who will relax it if it limits the study too much.
