@@ -88,33 +88,138 @@ def load_summary(runs_dir: Path, name: str) -> dict | None:
 EMPTY = "<p class=note>No results yet. This page fills in once the training runs finish.</p>"
 
 
+def _fmt_ttf(v: float, h: float) -> str:
+    return f"> {h:.0f} (end)" if v >= h else f"{v:.1f}"
+
+
+def verdict_sentence(s: dict) -> str:
+    n = s["numbers"]
+    b, q = n["base"]["error_after_switch_mean3"], n["pinn"]["error_after_switch_mean3"]
+    pr = s["primary"]
+    stats = (
+        f"mean error on stairs over hip, knee and ankle: base {b:.2f}°, pinn {q:.2f}°; "
+        f"Wilcoxon p = {pr['p']:.3f}, rank-biserial r = {pr['rank_biserial_r']:.2f}, "
+        f"n = {pr['n']} people"
+    )
+    lead = {
+        "pinn is better": "Yes: pinn kept a lower joint-angle error than base after the switch "
+        "to stairs",
+        "base is better": "No: base kept a lower joint-angle error than pinn after the switch "
+        "to stairs",
+        "no clear difference": "No clear difference: pinn did not keep a reliably lower "
+        "joint-angle error than base after the switch to stairs",
+    }[s["verdict"]]
+    return f"{lead} ({stats})."
+
+
 def results_body(runs_dir: Path) -> tuple[str, bool]:
     s = load_summary(runs_dir, "results")
-    if s is None:
+    figs = load_summary(runs_dir, "figures")
+    if s is None or figs is None:
         return "<h1>Results</h1>" + EMPTY, False
-    # Filled in by step 7: figure JSON, two numbers per model, verdict sentence.
-    fig = json.dumps(s["figure"])
-    rows = "".join(
-        f"<tr><td>{html.escape(m['model'])}</td><td>{m['error_after_switch']}</td>"
-        f"<td>{m['time_to_fail']}</td></tr>"
-        for m in s["numbers"]
+    h = s["H"]
+    n = s["numbers"]
+    joints = ["hip", "knee", "ankle"]
+    head = "".join(f"<th>{j}</th>" for j in joints)
+    rows = ""
+    for m in ["base", "pinn"]:
+        e = "".join(f"<td>{n[m]['error_after_switch'][j]:.2f}</td>" for j in joints)
+        f = "".join(f"<td>{_fmt_ttf(n[m]['time_to_fail_median'][j], h)}</td>" for j in joints)
+        w = "".join(f"<td>{n[m]['walk_error'][j]:.2f}</td>" for j in joints)
+        rows += (
+            f"<tr><td><b>{m}</b></td>{e}<td>{n[m]['error_after_switch_mean3']:.2f}</td>{f}{w}</tr>"
+        )
+    pr = s["primary"]
+    sec = "".join(
+        f"<tr><td>{k}</td><td>{v['hodges_lehmann']:+.2f}</td><td>{v['rank_biserial_r']:+.2f}"
+        f"</td><td>{v['p']:.3f}</td></tr>"
+        for k, v in s["secondary"].items()
     )
-    body = (
-        f"<h1>Results</h1><p class=note>{html.escape(s['verdict'])}</p>"
-        '<div id=fig style="height:520px"></div>'
-        f"<script>const F={fig};Plotly.newPlot('fig',F.data,F.layout)</script>"
-        "<h2>Numbers</h2><div class=wrap><table><thead><tr><th>Model</th>"
-        "<th>Error after switch (°)</th><th>Time to fail (s)</th></tr></thead>"
-        f"<tbody>{rows}</tbody></table></div>"
-    )
+    sens = s["sensitivity_all_people"]
+    body = f"""
+<h1>Results</h1>
+<p class=note><b>Did pinn last longer?</b> {html.escape(verdict_sentence(s))}</p>
+<div id=fig1 style="height:520px"></div>
+<h2>The two numbers per model</h2>
+<p>Error after switch: RMSE (°) over the stairs part, mean over people. Time to fail: median
+over people of the time (s) until the rolling 2 s error stays above 1.5 × the model's own
+walking error for 2 s; runs that never fail count as the horizon H = {h:.0f} s.</p>
+<div class=wrap><table><thead>
+<tr><th rowspan=2>Model</th><th colspan=4>Error after switch (°)</th>
+<th colspan=3>Time to fail (s)</th><th colspan=3>Walking error (°)</th></tr>
+<tr>{head}<th>mean</th>{head}{head}</tr></thead><tbody>{rows}</tbody></table></div>
+<h2>Test</h2>
+<p>Primary endpoint: error after switch averaged over hip, knee and ankle, paired across
+{pr["n"]} people (base − pinn). Wilcoxon signed-rank p = {pr["p"]:.3f}; rank-biserial
+r = {pr["rank_biserial_r"]:+.2f}; Hodges–Lehmann difference {pr["hodges_lehmann"]:+.2f}°
+(95% bootstrap CI {pr["hl_ci95"][0]:+.2f} to {pr["hl_ci95"][1]:+.2f}). Verdict:
+<b>{html.escape(s["verdict"])}</b>.</p>
+<p>Excluded by the pre-registered gyro check: {", ".join(s["excluded"]) or "none"}.
+Sensitivity (all {len(sens["people"])} people, not the verdict): p = {sens["p"]:.3f},
+r = {sens["rank_biserial_r"]:+.2f}.</p>
+<details><summary>Secondary results (base − pinn)</summary><div class=wrap><table>
+<thead><tr><th>measure</th><th>HL diff</th><th>r</th><th>p</th></tr></thead>
+<tbody>{sec}</tbody></table></div></details>
+<h2>Around each stair entry</h2>
+<div id=fig2 style="height:460px"></div>
+<p>All numbers are computed by <code>gaitpinn.test</code> from the final runs listed on the
+<a href="runs.html">Runs</a> page; per-person run IDs are on the <a href="people.html">People</a>
+page.</p>
+<script>
+const F={json.dumps(figs)};
+const cfg={{responsive:true,displaylogo:false}};
+Plotly.newPlot('fig1',F.error_over_time.data,F.error_over_time.layout,cfg);
+Plotly.newPlot('fig2',F.error_by_bout.data,F.error_by_bout.layout,cfg);
+</script>"""
     return body, True
 
 
 def people_body(runs_dir: Path) -> tuple[str, bool]:
-    s = load_summary(runs_dir, "people")
-    if s is None:
+    ppl = load_summary(runs_dir, "people")
+    s = load_summary(runs_dir, "results")
+    if ppl is None or s is None:
         return "<h1>People</h1>" + EMPTY, False
-    return "<h1>People</h1>" + s.get("html", ""), True
+    nums = {
+        p: {m: v[m]["error_after_switch"] for m in ["base", "pinn"]}
+        for p, v in s["per_person"].items()
+    }
+    opts = "".join(f"<option>{p}</option>" for p in ppl)
+    body = f"""
+<h1>People</h1>
+<p>True vs predicted angles around the switch (seed 0). Pick a person:
+<select id=who>{opts}</select></p>
+<p id=info class=note></p>
+<div id=fig style="height:720px"></div>
+<script>
+const P={json.dumps(ppl)}; const N={json.dumps(nums)};
+function draw(p) {{
+  const d=P[p], J=['hip','knee','ankle'], tr=[];
+  J.forEach((j,k)=>{{
+    const ax=k?String(k+1):'';
+    tr.push({{x:d.t,y:d.true[j],name:'true',line:{{color:'#222',width:1.5}},
+      xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'true'}});
+    tr.push({{x:d.t,y:d.base[j],name:'base',line:{{color:'#4C72B0',width:1.2}},
+      xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'base'}});
+    tr.push({{x:d.t,y:d.pinn[j],name:'pinn',line:{{color:'#DD8452',width:1.2}},
+      xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'pinn'}});
+  }});
+  const L={{template:'plotly_white',hovermode:'x unified',grid:{{rows:3,columns:1,
+    pattern:'independent'}},margin:{{l:60,r:20,t:30,b:40}},
+    shapes:[0,1,2].map(k=>({{type:'line',x0:0,x1:0,xref:'x'+(k?k+1:''),yref:'y'+(k?k+1:'')+
+      ' domain',y0:0,y1:1,line:{{color:'#555',width:1}}}})),
+    yaxis:{{title:{{text:'hip (°)'}}}},yaxis2:{{title:{{text:'knee (°)'}}}},
+    yaxis3:{{title:{{text:'ankle (°)'}}}},xaxis3:{{title:{{text:'time since switch (s)'}}}}}};
+  Plotly.newPlot('fig',tr,L,{{responsive:true,displaylogo:false}});
+  let txt='Runs: '+d.base_run+', '+d.pinn_run+'.';
+  if (d.excluded) txt+=' Excluded from the comparison by the gyro check.';
+  if (N[p]) txt+=' Error after switch (mean of 5 seeds), base: '+
+    J.map(j=>j+' '+N[p].base[j].toFixed(2)+'°').join(', ')+'; pinn: '+
+    J.map(j=>j+' '+N[p].pinn[j].toFixed(2)+'°').join(', ')+'.';
+  document.getElementById('info').textContent=txt;
+}}
+const sel=document.getElementById('who'); sel.onchange=()=>draw(sel.value); draw(sel.value);
+</script>"""
+    return body, True
 
 
 def runs_body(runs_dir: Path) -> str:

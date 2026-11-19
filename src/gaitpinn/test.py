@@ -143,6 +143,16 @@ def wilcoxon(base: np.ndarray, pinn: np.ndarray, seed: int = 0) -> dict:
     from scipy import stats
 
     d = np.asarray(base) - np.asarray(pinn)
+    if not np.any(d != 0):  # identical for everyone (e.g. both never fail): no evidence
+        return {
+            "n": int(len(d)),
+            "p": 1.0,
+            "statistic": float("nan"),
+            "rank_biserial_r": 0.0,
+            "hodges_lehmann": 0.0,
+            "hl_ci95": [0.0, 0.0],
+            "median_diff": 0.0,
+        }
     res = stats.wilcoxon(d, zero_method="wilcox", alternative="two-sided")
     nz = d[d != 0]
     ranks = stats.rankdata(np.abs(nz))
