@@ -105,7 +105,7 @@ def load(runs_dir: Path, kind: str) -> list[dict]:
 def select(runs_dir: Path) -> dict:
     """Tuning: per model, the grid configuration with the lowest mean walking-validation
     angle RMSE across people. Writes runs/chosen_<model>.json and summary/tuning.json."""
-    tune = load(runs_dir, "tune")
+    tune = [r for r in load(runs_dir, "tune") if r["person_info"]["gyro_ok"]]
     out = {}
     for m in MODELS:
         by_tag: dict[str, list] = {}
@@ -176,9 +176,9 @@ def verdict(w: dict) -> str:
 
 def summary(runs_dir: Path) -> dict:
     """Final runs -> summary/results.json (numbers, test, curves) for plot.py and site.py."""
-    final = load(runs_dir, "final")
-    excluded = sorted({r["person"] for r in final if not r["person_info"]["gyro_ok"]})
-    final = [r for r in final if r["person"] not in excluded]
+    final_all = load(runs_dir, "final")
+    excluded = sorted({r["person"] for r in final_all if not r["person_info"]["gyro_ok"]})
+    final = [r for r in final_all if r["person"] not in excluded]
     people = sorted({r["person"] for r in final})
     by = {
         (m, p): [r for r in final if r["model"] == m and r["person"] == p]
@@ -243,7 +243,25 @@ def summary(runs_dir: Path) -> dict:
     }
     curves = error_curves(runs_dir, by, complete, H)
     bouts = bout_curves(runs_dir, by, complete)
+    # sensitivity only (not the verdict): all people, including those excluded by the gyro check
+    allp = sorted({r["person"] for r in final_all})
+    sens = {
+        m: np.array(
+            [
+                np.mean(
+                    [
+                        np.mean(list(r["metrics"]["error_after_switch"].values()))
+                        for r in final_all
+                        if r["person"] == p and r["model"] == m
+                    ]
+                )
+                for p in allp
+            ]
+        )
+        for m in MODELS
+    }
     out = {
+        "sensitivity_all_people": wilcoxon(sens["base"], sens["pinn"]) | {"people": allp},
         "people": complete,
         "excluded": excluded,
         "H": H,

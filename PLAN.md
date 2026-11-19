@@ -335,3 +335,20 @@ What was actually used, checked on the system on 2026-11-19:
     first-order filter.
   - **Swing:** foot gyro norm above its 60th percentile on walking training files, so about
     40% of walking samples count as swing, for at least 100 ms.
+- **2026-11-19, gyro alignment, final form** (walking data only; no model trained yet). With
+  the principal-axis alignment, 14 of 22 people passed the required gyro check. For each person
+  and joint there are now two candidates, both fitted on walking training files:
+  - `pca`: each sensor's principal gyro axis;
+  - `lsq`: each sensor's unit axis from a least-squares fit to the true joint speed.
+
+  The one with the higher correlation on walking validation files is kept. With this, 16 of 22
+  pass.
+- **2026-11-19, exclusion applied (pre-registered rule).** AB06, AB07, AB08, AB16, AB19 and
+  AB20 fail the gyro check even after the fix:
+  - AB06: ankle r = −0.06, which looks like a sensor problem;
+  - AB07: ankle r = 0.84, just below 0.85;
+  - the others: r = 0.76–0.83 on one joint.
+
+  They are left out of tuning selection and of the verdict, for both models. Both models are
+  still trained for them, and a sensitivity test on all 22 people is reported separately. It
+  is not part of the verdict.
