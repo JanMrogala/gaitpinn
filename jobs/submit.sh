@@ -9,6 +9,16 @@ case "$what" in
     script=jobs/run.sbatch; args="--config configs/base.yaml --smoke --seed 0" ;;
   prepare)
     part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args="" ;;
+  prepare-x)  # study 2: also convert ramp files, into data/h5x
+    part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args=""; extra=",GP_H5=h5x,GP_RAMPS=1" ;;
+  xtune|xcal|xfinal)  # study 2 (PLAN2.md)
+    case "$what" in xtune) n=96 ;; xcal) n=4 ;; xfinal) n=40 ;; esac
+    if [ "$what" != xtune ]; then
+      test -f "$RUNS_LOCAL/chosen_x.json" || { echo "run: python -m gaitpinn.test xselect" >&2; exit 1; }
+      rsync -a "$RUNS_LOCAL/chosen_x.json" "$LUMI_HOST:$SCR/"
+    fi
+    part=small-g; time="${GP_TIME:-04:00:00}"; script="--array=0-$((n - 1)) jobs/xtrain.sbatch"
+    args=""; extra=",GP_KIND=$what" ;;
   final-strong)
     # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
     python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c['lam']=0.1; json.dump(c, open(sys.argv[2],'w'), indent=2)" \

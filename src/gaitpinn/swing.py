@@ -156,7 +156,7 @@ class SwingTerm(nn.Module):
         w = nn.functional.softplus(self.w_raw) * self.sign
         return torch.einsum("m,bmt->bt", w, act)
 
-    def residuals(self, angles, tau, phd, act):
+    def residuals(self, angles, tau, phd, act, body=None):
         """angles (B,3,T) deg; tau (B,T) N m; phd thigh speed (B,T) rad/s; act (B,M,T).
 
         Returns the two unit-free residuals, each (B, T-2)."""
@@ -167,16 +167,23 @@ class SwingTerm(nn.Module):
         qdd = (q[:, 2:] - 2 * q[:, 1:-1] + q[:, :-2]) * rate**2
         phdd = (phd[:, 2:] - phd[:, :-2]) * (rate / 2)
         qc, phc, phdc, tc = q[:, 1:-1], ph[:, 1:-1], phd[:, 1:-1], tau[:, 1:-1]
-        p = self.p
+        # body: optional per-sample parameters {m, d, I_c, l_t, scale_dyn, scale_tau}, each (B, 1)
+        p = self.p if body is None else body
+        sd = self.scale_dyn if body is None else body["scale_dyn"]
+        st = self.scale_tau if body is None else body["scale_tau"]
         lhs = self.lhs(qc, qd, qdd, phc, phdc, phdd, p["m"], p["d"], p["I_c"], p["l_t"], G)
         k = nn.functional.softplus(self.k_raw)
         b = nn.functional.softplus(self.b_raw)
-        r1 = (lhs - (tc - k * (qc - self.q0) - b * qd)) / self.scale_dyn
-        r2 = (tc - self.muscle_torque(act)[:, 1:-1]) / self.scale_tau
+        muscle = self.muscle_torque(act)[:, 1:-1]
+        if body is not None and "tau_scale" in body:
+            # study 2: shared parameters are relative to each person's body size (m g d)
+            k, b, muscle = k * body["tau_scale"], b * body["tau_scale"], muscle * body["tau_scale"]
+        r1 = (lhs - (tc - k * (qc - self.q0) - b * qd)) / sd
+        r2 = (tc - muscle) / st
         return r1, r2
 
-    def forward(self, angles, tau, phd, act, swing) -> torch.Tensor:
-        r1, r2 = self.residuals(angles, tau, phd, act)
+    def forward(self, angles, tau, phd, act, swing, body=None) -> torch.Tensor:
+        r1, r2 = self.residuals(angles, tau, phd, act, body)
         m = swing[:, 1:-1].float()
         n = m.sum().clamp(min=1)
         return ((r1**2 + r2**2) * m).sum() / n

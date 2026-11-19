@@ -395,9 +395,19 @@ def bout_curves(runs_dir, by, people, models=MODELS) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["select", "summary"])
+    ap.add_argument("action", choices=["select", "summary", "xselect", "xsummary"])
     ap.add_argument("--runs", type=Path, required=True)
     a = ap.parse_args()
+    if a.action == "xselect":
+        for f, v in xselect(a.runs).items():
+            print(f, {k: v[k] for k in v if not k.startswith("_")})
+        return
+    if a.action == "xsummary":
+        s = xsummary(a.runs)
+        print(f"study 2: people {len(s['people'])}, H {s['H']:.1f} s")
+        for k, w in s["tests"].items():
+            print(k, w["verdict"], f"p={w['p']:.4f} p_holm={w['p_holm']:.4f}")
+        return
     if a.action == "select":
         for m, s in select(a.runs).items():
             print(m, s["chosen_tag"], s["chosen"], f"{s['table'][s['chosen_tag']]}")
@@ -409,3 +419,210 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------- study 2 (PLAN2.md) ----------
+
+XMODELS = ["base", "pinn", "pinn_cal", "base_cal"]
+XTESTS = [("base", "pinn"), ("base", "pinn_cal"), ("pinn", "pinn_cal")]
+
+
+def xselect(runs_dir: Path) -> dict:
+    """Per fold: the configuration with the lowest validation score among that fold's tuning
+    runs (nested); with --cal, also the calibration setting from that fold's xcal runs."""
+    from gaitpinn import runs as runrec
+
+    recs = [r for r in runrec.load_runs(runs_dir) if r["status"] == "done"]
+    out = {}
+    for r in recs:
+        if r["kind"] != "xtune":
+            continue
+        f = f"fold{r['fold']['fold']}"
+        m = r["model"].split("-")[0]
+        cur = out.setdefault(f, {}).get(f"_{m}")
+        if cur is None or r["metrics"]["val_rmse"] < cur[0]:
+            keys = ["lr", "width", "weight_decay", "lam"]
+            out[f][f"_{m}"] = (r["metrics"]["val_rmse"], r["run_id"])
+            out[f][m] = {k: r["config"][k] for k in keys if k in r["config"]}
+    for r in recs:
+        if r["kind"] != "xcal":
+            continue
+        f = f"fold{r['fold']['fold']}"
+        res = r["metrics"]["cal"]
+        best = min(res, key=res.get)
+        from gaitpinn import cross
+
+        s = next(s for s in cross.cal_settings(r["model"]) if s["name"] == best)
+        out[f][f"cal_{r['model']}"] = s
+        out[f][f"_cal_{r['model']}"] = (res[best], r["run_id"])
+    (runs_dir / "chosen_x.json").write_text(json.dumps(out, indent=2))
+    return out
+
+
+def holm(ps: list[float]) -> list[float]:
+    order = np.argsort(ps)
+    adj = np.empty(len(ps))
+    run = 0.0
+    for rank, i in enumerate(order):
+        run = max(run, (len(ps) - rank) * ps[i])
+        adj[i] = min(1.0, run)
+    return adj.tolist()
+
+
+def xsummary(runs_dir: Path) -> dict:
+    """Final study-2 runs -> summary/results2.json."""
+    from gaitpinn import runs as runrec
+
+    final = [
+        r for r in runrec.load_runs(runs_dir) if r["kind"] == "xfinal" and r["status"] == "done"
+    ]
+    models = [m for m in XMODELS if any(r["model"] == m for r in final)]
+    people = sorted({r["person"] for r in final})
+    by = {
+        (m, p): [r for r in final if r["model"] == m and r["person"] == p]
+        for m in models
+        for p in people
+    }
+    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in models)]
+    H = min(r["metrics"]["stairs_seconds"] for r in final if r["person"] in complete)
+    fold_of = {r["person"]: r["fold"]["fold"] for r in final}
+
+    def seed_mean(m, p, key):
+        return {j: float(np.mean([r["metrics"][key][j] for r in by[(m, p)]])) for j in JOINTS}
+
+    def ttf(m, p):
+        return {
+            j: float(
+                np.median(
+                    [
+                        min(v, H) if (v := r["metrics"]["time_to_fail"][j]) is not None else H
+                        for r in by[(m, p)]
+                    ]
+                )
+            )
+            for j in JOINTS
+        }
+
+    keys = [
+        "error_after_switch",
+        "walk_error",
+        "walk_error_all_test",
+        "error_ascent",
+        "error_descent",
+    ]
+    per = {
+        p: {
+            m: {
+                **{k: seed_mean(m, p, k) for k in keys},
+                "time_to_fail": ttf(m, p),
+                "run_ids": sorted(r["run_id"] for r in by[(m, p)]),
+            }
+            for m in models
+        }
+        for p in complete
+    }
+
+    def vec(m, key, j=None, ppl=None):
+        ppl = ppl or complete
+        if j is None:
+            return np.array([np.mean([per[p][m][key][k] for k in JOINTS]) for p in ppl])
+        return np.array([per[p][m][key][j] for p in ppl])
+
+    tests = {}
+    raw = []
+    for a, b in XTESTS:
+        if a in models and b in models:
+            w = wilcoxon(vec(a, "error_after_switch"), vec(b, "error_after_switch"))
+            tests[f"{a} vs {b}"] = w
+            raw.append(w["p"])
+    for (name, w), padj in zip(tests.items(), holm(raw), strict=True):
+        a, b = name.split(" vs ")
+        w["p_holm"] = padj
+        w["verdict"] = (
+            f"{b} is better"
+            if padj < 0.05 and w["rank_biserial_r"] > 0
+            else f"{a} is better"
+            if padj < 0.05 and w["rank_biserial_r"] < 0
+            else "no clear difference"
+        )
+        w["per_fold_median"] = {
+            f: float(
+                np.median(
+                    [
+                        per[p][a]["error_after_switch"][j] - per[p][b]["error_after_switch"][j]
+                        for p in complete
+                        if fold_of[p] == f
+                        for j in JOINTS
+                    ]
+                )
+            )
+            for f in sorted(set(fold_of.values()))
+        }
+    secondary = {}
+    pairs = [("base", "base_cal"), ("base_cal", "pinn_cal")] + XTESTS
+    for a, b in pairs:
+        if a not in models or b not in models:
+            continue
+        for key in ["error_after_switch", "error_ascent", "error_descent", "time_to_fail"]:
+            for j in JOINTS:
+                secondary[f"{a} vs {b}/{key}/{j}"] = wilcoxon(vec(a, key, j), vec(b, key, j))
+        if (a, b) in [("base", "base_cal"), ("base_cal", "pinn_cal")]:
+            secondary[f"{a} vs {b}/primary"] = wilcoxon(
+                vec(a, "error_after_switch"), vec(b, "error_after_switch")
+            )
+    gyro_ok = []
+    checks = runs_dir / "checks" / "checks.jsonl"
+    if checks.exists():
+        ok = {
+            json.loads(line)["person"]: json.loads(line)["gyro_ok"]
+            for line in checks.read_text().splitlines()
+        }
+        gyro_ok = [p for p in complete if ok.get(p)]
+        for a, b in XTESTS:
+            if a in models and b in models and len(gyro_ok) > 5:
+                secondary[f"{a} vs {b}/primary/gyro-check people"] = wilcoxon(
+                    vec(a, "error_after_switch", ppl=gyro_ok),
+                    vec(b, "error_after_switch", ppl=gyro_ok),
+                )
+    numbers = {
+        m: {
+            "error_after_switch": {
+                j: float(vec(m, "error_after_switch", j).mean()) for j in JOINTS
+            },
+            "error_after_switch_mean3": float(vec(m, "error_after_switch").mean()),
+            "walk_error": {j: float(vec(m, "walk_error", j).mean()) for j in JOINTS},
+            "error_ascent": {j: float(vec(m, "error_ascent", j).mean()) for j in JOINTS},
+            "error_descent": {j: float(vec(m, "error_descent", j).mean()) for j in JOINTS},
+            "time_to_fail_median": {j: float(np.median(vec(m, "time_to_fail", j))) for j in JOINTS},
+        }
+        for m in models
+    }
+    cal_info = {}
+    for m in ("pinn_cal", "base_cal"):
+        rs = [r for r in final if r["model"] == m]
+        if rs:
+            cal_info[m] = {
+                "settings_by_fold": {str(r["fold"]["fold"]): r["calibration"]["name"] for r in rs},
+                "joints_gated_off": int(sum(not v for r in rs for v in r["gate"].values())),
+                "joint_checks": int(sum(len(r["gate"]) for r in rs)),
+            }
+    curves = error_curves(runs_dir, by, complete, H, models)
+    bouts = bout_curves(runs_dir, by, complete, models)
+    out = {
+        "study": 2,
+        "models": models,
+        "people": complete,
+        "H": H,
+        "folds": fold_of,
+        "per_person": per,
+        "numbers": numbers,
+        "tests": tests,
+        "secondary": secondary,
+        "gyro_check_people": gyro_ok,
+        "calibration": cal_info,
+        "curves": curves,
+        "bouts": bouts,
+    }
+    (runs_dir / "summary").mkdir(exist_ok=True)
+    (runs_dir / "summary" / "results2.json").write_text(json.dumps(out))
+    return out

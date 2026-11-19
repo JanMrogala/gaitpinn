@@ -10,10 +10,12 @@
 set -euo pipefail
 module purge
 module load Local-LAIF lumi-aif-singularity-bindings
-RAW="$GP_SCR/data/raw"; EXT="$GP_SCR/data/extract"; OUT="$GP_SCR/data/h5"
+RAW="$GP_SCR/data/raw"; EXT="$GP_SCR/data/extract"; OUT="$GP_SCR/data/${GP_H5:-h5}"
+RAMPS=""; MODES="treadmill levelground stair"
+if [ "${GP_RAMPS:-0}" = 1 ]; then RAMPS="--ramps"; MODES="$MODES ramp"; fi
 mkdir -p "$EXT" "$OUT"
 for z in "$RAW"/Subjects_Part*.zip; do
-  for mode in treadmill levelground stair; do
+  for mode in $MODES; do
     for kind in ik imu emg conditions; do
       unzip -o -q "$z" "*/$mode/$kind/*.mat" -d "$EXT" < /dev/null || true
     done
@@ -24,6 +26,6 @@ echo "people: $people"
 CODE="$GP_ROOT/code/$GP_COMMIT"
 singularity exec "$GP_SIF" bash -c \
   'export PYTHONPATH="$1/src:${PYTHONPATH:-}"; shift
-   printf "%s\n" $4 | xargs -P 8 -I{} python -m gaitpinn.data --extract "$1" --info "$2" --out "$3" {}' \
-  _ "$CODE" "$EXT" "$RAW/SubjectInfo.mat" "$OUT" "$people"
+   printf "%s\n" $4 | xargs -P 8 -I{} python -m gaitpinn.data --extract "$1" --info "$2" --out "$3" $5 {}' \
+  _ "$CODE" "$EXT" "$RAW/SubjectInfo.mat" "$OUT" "$people" "$RAMPS"
 ls -la "$OUT"

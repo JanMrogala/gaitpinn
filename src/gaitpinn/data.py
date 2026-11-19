@@ -44,6 +44,7 @@ IMU = [
 TARGETS = ["hip_flexion_r", "knee_angle_r", "ankle_angle_r"]
 WALKING = ["treadmill", "levelground"]
 STAIRS = "stair"
+RAMP = "ramp"  # used only by study 2 (cross-person); study 1 never reads ramp files
 SKIP_S = 0.5  # first 0.5 s of each file: model context only, never scored or in a loss
 
 
@@ -114,7 +115,7 @@ def target_ok(y: np.ndarray) -> tuple[bool, str]:
 # ---------- conversion of one person ----------
 
 
-def convert_person(person_dir: Path, info: dict, out: Path) -> Path:
+def convert_person(person_dir: Path, info: dict, out: Path, ramps: bool = False) -> Path:
     """Convert <person>/<date>/{treadmill,levelground,stair}/... into <out>/<person>.h5."""
     from gaitpinn import matfile
 
@@ -132,7 +133,7 @@ def convert_person(person_dir: Path, info: dict, out: Path) -> Path:
             imu=IMU,
             targets=TARGETS,
         )
-        for mode in [*WALKING, STAIRS]:
+        for mode in [*WALKING, STAIRS] + ([RAMP] if ramps else []):
             for f in sorted((date_dir / mode / "ik").glob("*.mat")):
                 name = f.stem
                 tabs = {
@@ -285,12 +286,13 @@ def main() -> None:
     ap.add_argument("--extract", type=Path, required=True, help="folder with AB06/, AB07/, ...")
     ap.add_argument("--info", type=Path, required=True, help="SubjectInfo.mat")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--ramps", action="store_true", help="also convert ramp files (study 2)")
     ap.add_argument("people", nargs="+")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     info = subject_info(a.info)
     for p in a.people:
-        print(convert_person(a.extract / p, info[p], a.out), flush=True)
+        print(convert_person(a.extract / p, info[p], a.out, a.ramps), flush=True)
 
 
 if __name__ == "__main__":

@@ -161,13 +161,15 @@ class GyroTerm(torch.nn.Module):
             "inv", torch.tensor([1 / scale[j] for j in JOINTS], dtype=torch.float32)
         )
 
-    def residual(self, angles: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+    def residual(self, angles: torch.Tensor, ref: torch.Tensor, inv=None) -> torch.Tensor:
         """angles (B, 3, T) deg, ref (B, 2, T) deg/s -> unit-free residual (B, 2, T-2)."""
         speed = (angles[:, self.idx, 2:] - angles[:, self.idx, :-2]) * (data.RATE / 2)
-        return (speed - ref[..., 1:-1]) * self.inv[None, :, None]
+        # inv: optional per-sample 1/scale (B, 2) when chunks come from different people
+        scale = self.inv[None, :, None] if inv is None else inv[:, :, None]
+        return (speed - ref[..., 1:-1]) * scale
 
-    def forward(self, angles: torch.Tensor, ref: torch.Tensor, mask=None) -> torch.Tensor:
-        r = self.residual(angles, ref) ** 2
+    def forward(self, angles: torch.Tensor, ref: torch.Tensor, mask=None, inv=None) -> torch.Tensor:
+        r = self.residual(angles, ref, inv) ** 2
         if mask is None:
             return r.mean()
         m = mask[:, None, 1:-1].float().expand_as(r)
