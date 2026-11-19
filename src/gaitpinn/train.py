@@ -149,7 +149,7 @@ class Person:
 class Model(torch.nn.Module):
     def __init__(self, cfg: dict, p: Person):
         super().__init__()
-        n_out = 4 if cfg["model"] == "pinn" else 3
+        n_out = 4 if cfg["model"].startswith("pinn") else 3
         self.net = Net(N_IN, n_out, cfg["width"], cfg["levels"], cfg["kernel"], cfg["dropout"])
         f32 = lambda a: torch.tensor(np.asarray(a), dtype=torch.float32)  # noqa: E731
         self.register_buffer("x_mean", f32(p.x_mean)[None, :, None])
@@ -235,7 +235,7 @@ def fit(cfg: dict, p: Person, seed: int, dev) -> tuple[Model, dict]:
     model = Model(cfg, p).to(dev)
     params = list(model.parameters())
     gterm = sterm = None
-    if cfg["model"] == "pinn":
+    if cfg["model"].startswith("pinn"):
         gterm = gyro.GyroTerm(p.gyro_scale).to(dev)
         sterm = swing.SwingTerm(p.body, p.swing_scale, p.tau_scale, cfg["swing_init"]).to(dev)
         params += list(sterm.parameters())

@@ -384,3 +384,15 @@ What was actually used, checked on the system on 2026-11-19:
   - `pinn`: r2c09 (lr 3e-3, width 64, λ = 0.001), mean validation RMSE 2.34°. λ = 0.001 is the
     smallest value in the grid; as declared above, it is used as is. The plan is frozen from
     here: no changes after the final batch.
+- **2026-11-19, added after the main result, at the user's request: a strongly
+  physics-constrained model, `pinn_strong`.** This is an addition. The pre-registered
+  `base` vs `pinn` verdict above is unchanged.
+  - **Settings:** the same network and settings as the tuned `pinn` (lr 3e-3, width 64,
+    dropout 0, up to 150 epochs) with a fixed, untuned physics weight λ = 0.1.
+  - **Why 0.1:** chosen from walking-only numbers measured before training (floor of the physics
+    terms with the true angles ≈ 2.6; converged angle loss of `base` ≈ 0.015). At λ = 0.1 the
+    physics term is about 15× the angle loss, so physics dominates training. No stairs number
+    was used to choose it.
+  - **Test:** the same as the primary one, on the same 16 people: Wilcoxon on `base − pinn_strong`,
+    error after switch averaged over the three joints, with the same verdict rule. Reported as
+    a separate, clearly labelled result.

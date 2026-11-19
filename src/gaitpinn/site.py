@@ -121,8 +121,9 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
     n = s["numbers"]
     joints = ["hip", "knee", "ankle"]
     head = "".join(f"<th>{j}</th>" for j in joints)
+    models = s.get("models", ["base", "pinn"])
     rows = ""
-    for m in ["base", "pinn"]:
+    for m in models:
         e = "".join(f"<td>{n[m]['error_after_switch'][j]:.2f}</td>" for j in joints)
         f = "".join(f"<td>{_fmt_ttf(n[m]['time_to_fail_median'][j], h)}</td>" for j in joints)
         w = "".join(f"<td>{n[m]['walk_error'][j]:.2f}</td>" for j in joints)
@@ -134,7 +135,7 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
         + "".join(f"<td>{n[m]['error_ascent'][j]:.2f}</td>" for j in joints)
         + "".join(f"<td>{n[m]['error_descent'][j]:.2f}</td>" for j in joints)
         + "</tr>"
-        for m in ["base", "pinn"]
+        for m in models
     )
     pr = s["primary"]
     sec = "".join(
@@ -143,9 +144,28 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
         for k, v in s["secondary"].items()
     )
     sens = s["sensitivity_all_people"]
+    strong = ""
+    for m, x in s.get("extra", {}).items():
+        q = x["primary"]
+        lam = s["configs"][m]["lam"]
+        lead = {
+            f"{m} is better": f"Yes: {m} kept a lower error than base",
+            "base is better": f"No: base kept a lower error than {m}",
+            "no clear difference": f"No clear difference between {m} and base",
+        }[x["verdict"]]
+        strong += (
+            f"<p class=note><b>Strongly physics-constrained model ({m}, λ = {lam:g}, added "
+            f"after the main result on request; not part of the pre-registered verdict).</b> "
+            f"{html.escape(lead)} (mean error on stairs: base "
+            f"{n['base']['error_after_switch_mean3']:.2f}°, {m} "
+            f"{n[m]['error_after_switch_mean3']:.2f}°; Wilcoxon p = {q['p']:.3f}, "
+            f"rank-biserial r = {q['rank_biserial_r']:+.2f}, Hodges–Lehmann "
+            f"{q['hodges_lehmann']:+.2f}°, n = {q['n']}).</p>"
+        )
     body = f"""
 <h1>Results</h1>
 <p class=note><b>Did pinn last longer?</b> {html.escape(verdict_sentence(s))}</p>
+{strong}
 <div id=fig1 style="height:520px"></div>
 <h2>The two numbers per model</h2>
 <p>Error after switch: RMSE (°) over the stairs part, mean over people. Time to fail: median
@@ -196,7 +216,7 @@ def people_body(runs_dir: Path) -> tuple[str, bool]:
     if ppl is None or s is None:
         return "<h1>People</h1>" + EMPTY, False
     nums = {
-        p: {m: v[m]["error_after_switch"] for m in ["base", "pinn"]}
+        p: {m: v[m]["error_after_switch"] for m in s.get("models", ["base", "pinn"])}
         for p, v in s["per_person"].items()
     }
     opts = "".join(f"<option>{p}</option>" for p in ppl)
@@ -208,16 +228,16 @@ def people_body(runs_dir: Path) -> tuple[str, bool]:
 <div id=fig style="height:720px"></div>
 <script>
 const P={json.dumps(ppl)}; const N={json.dumps(nums)};
+const M={json.dumps(s.get("models", ["base", "pinn"]))};
+const C={{base:'#4C72B0',pinn:'#DD8452',pinn_strong:'#55A868'}};
 function draw(p) {{
   const d=P[p], J=['hip','knee','ankle'], tr=[];
   J.forEach((j,k)=>{{
     const ax=k?String(k+1):'';
     tr.push({{x:d.t,y:d.true[j],name:'true',line:{{color:'#222',width:1.5}},
       xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'true'}});
-    tr.push({{x:d.t,y:d.base[j],name:'base',line:{{color:'#4C72B0',width:1.2}},
-      xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'base'}});
-    tr.push({{x:d.t,y:d.pinn[j],name:'pinn',line:{{color:'#DD8452',width:1.2}},
-      xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:'pinn'}});
+    M.filter(m=>d[m]).forEach(m=>tr.push({{x:d.t,y:d[m][j],name:m,
+      line:{{color:C[m],width:1.2}},xaxis:'x'+ax,yaxis:'y'+ax,showlegend:k==0,legendgroup:m}}));
   }});
   const L={{template:'plotly_white',hovermode:'x unified',grid:{{rows:3,columns:1,
     pattern:'independent'}},margin:{{l:60,r:20,t:30,b:40}},
@@ -226,11 +246,10 @@ function draw(p) {{
     yaxis:{{title:{{text:'hip (°)'}}}},yaxis2:{{title:{{text:'knee (°)'}}}},
     yaxis3:{{title:{{text:'ankle (°)'}}}},xaxis3:{{title:{{text:'time since switch (s)'}}}}}};
   Plotly.newPlot('fig',tr,L,{{responsive:true,displaylogo:false}});
-  let txt='Runs: '+d.base_run+', '+d.pinn_run+'.';
+  let txt='Runs: '+M.filter(m=>d[m+'_run']).map(m=>d[m+'_run']).join(', ')+'.';
   if (d.excluded) txt+=' Excluded from the comparison by the gyro check.';
-  if (N[p]) txt+=' Error after switch (mean of 5 seeds), base: '+
-    J.map(j=>j+' '+N[p].base[j].toFixed(2)+'°').join(', ')+'; pinn: '+
-    J.map(j=>j+' '+N[p].pinn[j].toFixed(2)+'°').join(', ')+'.';
+  if (N[p]) txt+=' Error after switch (mean of 5 seeds): '+M.filter(m=>N[p][m]).map(m=>
+    m+' '+J.map(j=>j+' '+N[p][m][j].toFixed(2)+'°').join(', ')).join('; ')+'.';
   document.getElementById('info').textContent=txt;
 }}
 const sel=document.getElementById('who'); sel.onchange=()=>draw(sel.value); draw(sel.value);

@@ -91,7 +91,8 @@ def run_metrics(
 
 # ---------- across runs ----------
 
-MODELS = ["base", "pinn"]
+MODELS = ["base", "pinn"]  # the pre-registered comparison
+EXTRA = ["pinn_strong"]  # added later on request, compared with base the same way
 BOUT_WINDOW = (-2.0, 6.0)
 BOUT_ENTRY = {"ascent": "walk-stairascent", "descent": "walk-stairdescent"}
 
@@ -178,9 +179,9 @@ def wilcoxon(base: np.ndarray, pinn: np.ndarray, seed: int = 0) -> dict:
     }
 
 
-def verdict(w: dict) -> str:
+def verdict(w: dict, name: str = "pinn") -> str:
     if w["p"] < 0.05 and w["rank_biserial_r"] > 0:
-        return "pinn is better"
+        return f"{name} is better"
     if w["p"] < 0.05 and w["rank_biserial_r"] < 0:
         return "base is better"
     return "no clear difference"
@@ -192,12 +193,13 @@ def summary(runs_dir: Path) -> dict:
     excluded = sorted({r["person"] for r in final_all if not r["person_info"]["gyro_ok"]})
     final = [r for r in final_all if r["person"] not in excluded]
     people = sorted({r["person"] for r in final})
+    models = MODELS + [m for m in EXTRA if any(r["model"] == m for r in final)]
     by = {
         (m, p): [r for r in final if r["model"] == m and r["person"] == p]
-        for m in MODELS
+        for m in models
         for p in people
     }
-    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in MODELS)]
+    complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in models)]
     H = min(r["metrics"]["stairs_seconds"] for r in final if r["person"] in complete)
 
     def seed_mean(m, p, key):
@@ -226,7 +228,7 @@ def summary(runs_dir: Path) -> dict:
                 "time_to_fail": ttf(m, p),
                 "run_ids": sorted(r["run_id"] for r in by[(m, p)]),
             }
-            for m in MODELS
+            for m in models
         }
         for p in complete
     }
@@ -253,10 +255,19 @@ def summary(runs_dir: Path) -> dict:
             "time_to_fail_median": {j: float(np.median(vec(m, "time_to_fail", j))) for j in JOINTS},
             "never_failed": {j: int(np.sum(vec(m, "time_to_fail", j) >= H)) for j in JOINTS},
         }
-        for m in MODELS
+        for m in models
     }
-    curves = error_curves(runs_dir, by, complete, H)
-    bouts = bout_curves(runs_dir, by, complete)
+    extra = {}
+    for m in models[2:]:
+        prim = wilcoxon(vec("base", "error_after_switch"), vec(m, "error_after_switch"))
+        sec = {
+            f"{key}/{j}": wilcoxon(vec("base", key, j), vec(m, key, j))
+            for key in ["error_after_switch", "error_ascent", "error_descent", "time_to_fail"]
+            for j in JOINTS
+        }
+        extra[m] = {"primary": prim, "verdict": verdict(prim, m), "secondary": sec}
+    curves = error_curves(runs_dir, by, complete, H, models)
+    bouts = bout_curves(runs_dir, by, complete, models)
     # sensitivity only (not the verdict): all people, including those excluded by the gyro check
     allp = sorted({r["person"] for r in final_all})
     sens = {
@@ -272,9 +283,16 @@ def summary(runs_dir: Path) -> dict:
                 for p in allp
             ]
         )
-        for m in MODELS
+        for m in models
+    }
+    configs = {
+        m: {k: by[(m, complete[0])][0]["config"].get(k) for k in ("lr", "width", "lam")}
+        for m in models
     }
     out = {
+        "models": models,
+        "configs": configs,
+        "extra": extra,
         "sensitivity_all_people": wilcoxon(sens["base"], sens["pinn"]) | {"people": allp},
         "people": complete,
         "excluded": excluded,
@@ -297,13 +315,13 @@ def _stream(runs_dir: Path, run_id: str) -> dict:
     return {k: z[k] for k in z.files}
 
 
-def error_curves(runs_dir, by, people, H) -> dict:
+def error_curves(runs_dir, by, people, H, models=MODELS) -> dict:
     """Rolling error on t in [-30, H]: per person seed-mean, then mean and t-based 95% CI."""
     from scipy import stats
 
     t_grid = np.round(np.arange(-30.0, H + 1e-9, 1 / data.RATE), 2)
     out = {"t": t_grid[::10].tolist()}
-    for m in MODELS:
+    for m in models:
         per_person = []
         for p in people:
             seeds = []
@@ -329,13 +347,13 @@ def error_curves(runs_dir, by, people, H) -> dict:
     return out
 
 
-def bout_curves(runs_dir, by, people) -> dict:
+def bout_curves(runs_dir, by, people, models=MODELS) -> dict:
     """Error vs time since each stair entry: sqrt(mean over bouts of e^2) per person, then
     mean over people. Ascent and descent separately."""
     lo, hi = (int(round(v * data.RATE)) for v in BOUT_WINDOW)
     offs = np.arange(lo, hi + 1)
     out = {"t": (offs / data.RATE).tolist()}
-    for m in MODELS:
+    for m in models:
         out[m] = {}
         for kind, entry in BOUT_ENTRY.items():
             per_person = []

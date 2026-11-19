@@ -17,7 +17,7 @@ def fake_runs(d, people=tuple(f"AB{i:02d}" for i in range(1, 10)), bad=("AB06",)
         lab[3000 + s0 + 300 : 3000 + s0 + 500] = "stairascent"
         lab[3000 + s0 + 800 : 3000 + s0 + 1000] = "walk-stairdescent"
     for p in people:
-        for m, extra in [("base", 3.0), ("pinn", 2.0)]:
+        for m, extra in [("base", 3.0), ("pinn", 2.0), ("pinn_strong", 3.5)]:
             for seed in range(5):
                 y = rng.normal(0, 10, (9000, 3))
                 e = rng.normal(0, 1, (9000, 3)) * np.where(t[:, None] < 0, 1, extra)
@@ -40,6 +40,7 @@ def fake_runs(d, people=tuple(f"AB{i:02d}" for i in range(1, 10)), bad=("AB06",)
                     "person": p,
                     "seed": seed,
                     "person_info": {"gyro_ok": p not in bad},
+                    "config": {"lr": 1e-3, "width": 64, "lam": 0.1 if m == "pinn_strong" else 0},
                     "metrics": met,
                 }
                 out = runs.write_run(d, rec)
@@ -60,6 +61,7 @@ def test_summary_figures_site(tmp_path):
     assert s["excluded"] == ["AB06"] and len(s["people"]) == 8
     assert s["verdict"] == "pinn is better"  # pinn errors are lower by construction
     assert len(s["sensitivity_all_people"]["people"]) == 9
+    assert s["extra"]["pinn_strong"]["verdict"] == "base is better"
     s = json.loads((tmp_path / "summary" / "results.json").read_text())
     figs = {"error_over_time": plot.error_over_time(s), "error_by_bout": plot.error_by_bout(s)}
     (tmp_path / "summary" / "figures.json").write_text(json.dumps(figs))
@@ -69,3 +71,4 @@ def test_summary_figures_site(tmp_path):
     page = (out / "index.html").read_text()
     assert "Yes: pinn kept a lower" in page and "fig1" in page
     assert "AB06" in (out / "people.html").read_text()
+    assert "Strongly physics-constrained model (pinn_strong" in page

@@ -14,8 +14,12 @@ import numpy as np
 
 from gaitpinn.test import JOINTS, MODELS
 
-COLORS = {"base": "#4C72B0", "pinn": "#DD8452"}
-BANDS = {"base": "rgba(76,114,176,0.18)", "pinn": "rgba(221,132,82,0.18)"}
+COLORS = {"base": "#4C72B0", "pinn": "#DD8452", "pinn_strong": "#55A868"}
+BANDS = {
+    "base": "rgba(76,114,176,0.18)",
+    "pinn": "rgba(221,132,82,0.18)",
+    "pinn_strong": "rgba(85,168,104,0.18)",
+}
 LAYOUT = {
     "template": "plotly_white",
     "hovermode": "x unified",
@@ -54,7 +58,7 @@ def error_over_time(s: dict, default: str = "knee") -> dict:
     t = c["t"]
     traces, shapes = [], {}
     for j in JOINTS:
-        for m in MODELS:
+        for m in s.get("models", MODELS):
             cur = c[m][j]
             vis = j == default
             traces.append(
@@ -92,7 +96,7 @@ def error_over_time(s: dict, default: str = "knee") -> dict:
                 "line": {"color": "#555", "width": 1},
             }
         ]
-        for m in MODELS:
+        for m in s.get("models", MODELS):
             w = s["numbers"][m]["walk_error"][j]
             sh.append(
                 {
@@ -111,7 +115,9 @@ def error_over_time(s: dict, default: str = "knee") -> dict:
         "xaxis": {"title": {"text": "time since switch (s)"}},
         "yaxis": {"title": {"text": "rolling 2 s RMSE (°)"}, "rangemode": "tozero"},
         "shapes": shapes[default],
-        "updatemenus": _joint_buttons(4, JOINTS.index(default), shapes),
+        "updatemenus": _joint_buttons(
+            2 * len(s.get("models", MODELS)), JOINTS.index(default), shapes
+        ),
     }
     return {"data": traces, "layout": layout}
 
@@ -121,7 +127,7 @@ def error_by_bout(s: dict, default: str = "knee") -> dict:
     traces, shapes = [], {}
     for j in JOINTS:
         for kind, dash in [("ascent", "solid"), ("descent", "dot")]:
-            for m in MODELS:
+            for m in s.get("models", MODELS):
                 traces.append(
                     {
                         "x": b["t"],
@@ -149,7 +155,9 @@ def error_by_bout(s: dict, default: str = "knee") -> dict:
         "xaxis": {"title": {"text": "time since stair entry (s)"}},
         "yaxis": {"title": {"text": "RMSE over bouts (°)"}, "rangemode": "tozero"},
         "shapes": shapes[default],
-        "updatemenus": _joint_buttons(4, JOINTS.index(default), shapes),
+        "updatemenus": _joint_buttons(
+            2 * len(s.get("models", MODELS)), JOINTS.index(default), shapes
+        ),
     }
     return {"data": traces, "layout": layout}
 
@@ -159,7 +167,7 @@ def people(runs_dir: Path, s: dict, t0: float = -10.0, t1: float = 40.0) -> dict
     out = {}
     for p in s["people"] + s["excluded"]:
         rec = {}
-        for m in MODELS:
+        for m in s.get("models", MODELS):
             ids = [
                 r for r in s["per_person"].get(p, {}).get(m, {}).get("run_ids", []) if "-s0-" in r
             ]

@@ -1,0 +1,18 @@
+# Strongly physics-constrained pinn (added on request after the main result; PLAN.md log).
+# Same network and settings as the tuned pinn, but a fixed, large physics weight (not tuned).
+model: pinn_strong
+round: 2  # tuning round (PLAN.md decisions log)
+width: 64
+levels: 6
+kernel: 3
+dropout: 0.0
+lr: 1.0e-3
+weight_decay: 0.0
+batch_size: 64
+chunk_s: 4.0
+steps_per_epoch: 50
+max_epochs: 150
+patience: 8
+lam: 0.1
+# Starting values of the learned swing-term parameters (softplus inputs for w, k, b).
+swing_init: {w: 0.0, k: -2.0, b: -2.0, q0: 0.1}

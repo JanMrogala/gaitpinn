@@ -9,6 +9,14 @@ case "$what" in
     script=jobs/run.sbatch; args="--config configs/base.yaml --smoke --seed 0" ;;
   prepare)
     part=dev-g; time=01:00:00; script=jobs/prepare.sbatch; args="" ;;
+  final-strong)
+    # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
+    python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c['lam']=0.1; json.dump(c, open(sys.argv[2],'w'), indent=2)" \
+      "$RUNS_LOCAL/chosen_pinn.json" "$RUNS_LOCAL/chosen_pinn_strong.json"
+    rsync -a "$RUNS_LOCAL/chosen_pinn_strong.json" "$LUMI_HOST:$SCR/"
+    n=$(ssh "$LUMI_HOST" "ls '$SCR/data/h5'/AB*.h5 | wc -l")
+    part=small-g; time="${GP_TIME:-03:00:00}"; script="--array=0-$((n - 1)) jobs/train.sbatch"
+    args=""; extra=",GP_KIND=final,GP_MODELS=pinn_strong" ;;
   tune|final)
     if [ "$what" = final ]; then  # the configurations chosen on walking validation
       for m in base pinn; do
