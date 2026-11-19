@@ -208,3 +208,19 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
     started.
   - The pilot runs are genuine tuning runs at the same commit; the full batch skips their
     indices.
+- **2026-11-19, tuning done (96 runs, arrays 23869610 and 23869690; one task held by a LUMI
+  filesystem error and released unchanged).** Per-fold choices (from `runs/chosen_x.json`,
+  lowest validation score):
+
+  | Fold | `base` | `pinn` |
+  |---|---|---|
+  | 0 | lr 1e-3, width 128, wd 1e-4 | lr 1e-3, width 128, λ 0.001 |
+  | 1 | lr 3e-3, width 128, wd 1e-5 | lr 1e-3, width 128, λ 0.001 |
+  | 2 | lr 3e-3, width 64, wd 0 | lr 1e-3, width 128, λ 0.001 |
+  | 3 | lr 3e-3, width 128, wd 1e-4 | lr 3e-3, width 128, λ 0.001 |
+
+  - In every fold, `pinn`'s validation score gets worse as λ grows, and the smallest λ in
+    the grid wins. The grid stays as planned; it is not extended, so both models keep the
+    same tuning effort. The physics loss in the final `pinn` is therefore weak.
+  - Code fixes with no effect on any number: the `__main__` block in `test.py` moved below
+    the study-2 functions, and early smoke records with no `status` field are skipped.

@@ -100,7 +100,9 @@ BOUT_ENTRY = {"ascent": "walk-stairascent", "descent": "walk-stairdescent"}
 def load(runs_dir: Path, kind: str) -> list[dict]:
     from gaitpinn import runs as runrec
 
-    return [r for r in runrec.load_runs(runs_dir) if r["kind"] == kind and r["status"] == "done"]
+    return [
+        r for r in runrec.load_runs(runs_dir) if r["kind"] == kind and r.get("status") == "done"
+    ]
 
 
 def select(runs_dir: Path) -> dict:
@@ -420,10 +422,6 @@ def main() -> None:
         print("verdict:", s["verdict"], s["primary"])
 
 
-if __name__ == "__main__":
-    main()
-
-
 # ---------- study 2 (PLAN2.md) ----------
 
 XMODELS = ["base", "pinn", "pinn_cal", "base_cal"]
@@ -435,7 +433,7 @@ def xselect(runs_dir: Path) -> dict:
     runs (nested); with --cal, also the calibration setting from that fold's xcal runs."""
     from gaitpinn import runs as runrec
 
-    recs = [r for r in runrec.load_runs(runs_dir) if r["status"] == "done"]
+    recs = [r for r in runrec.load_runs(runs_dir) if r.get("status") == "done"]
     out = {}
     for r in recs:
         if r["kind"] != "xtune":
@@ -483,7 +481,7 @@ def xsummary(runs_dir: Path, require: int = 22) -> dict:
     from gaitpinn import runs as runrec
 
     final = [
-        r for r in runrec.load_runs(runs_dir) if r["kind"] == "xfinal" and r["status"] == "done"
+        r for r in runrec.load_runs(runs_dir) if r["kind"] == "xfinal" and r.get("status") == "done"
     ]
     models = [m for m in XMODELS if any(r["model"] == m for r in final)]
     people = sorted({r["person"] for r in final})
@@ -621,7 +619,9 @@ def xsummary(runs_dir: Path, require: int = 22) -> dict:
                 "joints_gated_off": int(sum(not v for r in rs for v in r["gate"].values())),
                 "joint_checks": int(sum(len(r["gate"]) for r in rs)),
             }
-    xcal = [r for r in runrec.load_runs(runs_dir) if r["kind"] == "xcal" and r["status"] == "done"]
+    xcal = [
+        r for r in runrec.load_runs(runs_dir) if r["kind"] == "xcal" and r.get("status") == "done"
+    ]
     cal_info["diagnostic"] = {
         f"fold{r['fold']['fold']}/{p}": v for r in xcal for p, v in r["diagnostic"].items()
     }
@@ -657,3 +657,7 @@ def xsummary(runs_dir: Path, require: int = 22) -> dict:
     (runs_dir / "summary").mkdir(exist_ok=True)
     (runs_dir / "summary" / "results2.json").write_text(json.dumps(out))
     return out
+
+
+if __name__ == "__main__":
+    main()
