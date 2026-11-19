@@ -1,0 +1,27 @@
+# secrets and local settings
+.env.local
+.env*
+# prompts, agent instructions, memory
+*prompt*.md
+CLAUDE.md
+AGENTS.md
+.claude/
+# data, checkpoints, results, logs, images
+data/
+runs/
+results/
+logs/
+site/
+*.h5
+*.hdf5
+*.pt
+*.ckpt
+*.npz
+*.mat
+*.sif
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
