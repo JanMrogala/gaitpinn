@@ -352,3 +352,7 @@ What was actually used, checked on the system on 2026-11-19:
   They are left out of tuning selection and of the verdict, for both models. Both models are
   still trained for them, and a sensitivity test on all 22 people is reported separately. It
   is not part of the verdict.
+- **2026-11-19, job layout.** LUMI allows 210 submitted jobs per user on `small-g`. So each
+  array task trains one (model, person) pair on 1 GCD: either all 12 tuning configurations or
+  the 5 final seeds, one after another. That gives 44 tasks per batch. Each run still uses
+  exactly one GCD.
