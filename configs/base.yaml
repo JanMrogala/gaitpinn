@@ -1,4 +1,4 @@
-# Data-only model. Tuning grid in PLAN.md; values here are the defaults.
+# Data-only model. Shared settings are identical in pinn.yaml (PLAN.md, "Models").
 model: base
 width: 64
 levels: 6
@@ -8,6 +8,12 @@ lr: 1.0e-3
 weight_decay: 0.0
 batch_size: 64
 chunk_s: 4.0
+steps_per_epoch: 50
 max_epochs: 60
 patience: 8
 lam: 0.0
+# Tuning grid (12 configurations, same count as pinn).
+grid:
+  lr: [1.0e-3, 3.0e-3]
+  width: [32, 64]
+  weight_decay: [0.0, 1.0e-5, 1.0e-4]
