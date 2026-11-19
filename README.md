@@ -51,3 +51,20 @@ Excluded by the pre-registered gyro check: AB06, AB07, AB08, AB16, AB19, AB20.
 Every number above comes from `runs/summary/results.json`, which `gaitpinn.test summary` builds
 from the 220 final runs (`final-<model>-<person>-s<seed>-j23860765_<task>`, 2 models × 22
 people × 5 seeds). The website shows the plots and per-person run IDs.
+
+### Limitations
+
+- **Weak physics:** walking-validation tuning chose the smallest physics weight tried
+  (λ = 0.001, the edge of the grid), so `pinn` is close to `base` by construction. The study
+  does not test a strongly physics-constrained model.
+- **Swing model:** the simple swing pendulum from the plan explains real knee swing poorly.
+  Even with the true angles, its residual is about 2.6× the std of `I·knee_acc`.
+- **Time to fail:** both models cross the threshold about 2 s after the switch, before the
+  first stair step. This number mostly reflects the join between recordings and the walk up to
+  the stairs.
+- **Walking error `W`:** for some people (AB17, AB18, AB27, AB28), `W` is inflated by stretches
+  of broken IK angles in level-ground test files that the quality rule did not catch. Their
+  knee error in the stream's walking part is only 1–3°. This raises the threshold for both
+  models alike.
+- **Sample:** n = 16 after the pre-registered gyro-check exclusions. The result on all 22 is
+  reported alongside.

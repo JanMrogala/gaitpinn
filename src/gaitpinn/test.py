@@ -248,6 +248,8 @@ def summary(runs_dir: Path) -> dict:
             },
             "error_after_switch_mean3": float(vec(m, "error_after_switch").mean()),
             "walk_error": {j: float(vec(m, "walk_error", j).mean()) for j in JOINTS},
+            "error_ascent": {j: float(vec(m, "error_ascent", j).mean()) for j in JOINTS},
+            "error_descent": {j: float(vec(m, "error_descent", j).mean()) for j in JOINTS},
             "time_to_fail_median": {j: float(np.median(vec(m, "time_to_fail", j))) for j in JOINTS},
             "never_failed": {j: int(np.sum(vec(m, "time_to_fail", j) >= H)) for j in JOINTS},
         }

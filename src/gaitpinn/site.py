@@ -129,6 +129,13 @@ def results_body(runs_dir: Path) -> tuple[str, bool]:
         rows += (
             f"<tr><td><b>{m}</b></td>{e}<td>{n[m]['error_after_switch_mean3']:.2f}</td>{f}{w}</tr>"
         )
+    updown = "".join(
+        f"<tr><td><b>{m}</b></td>"
+        + "".join(f"<td>{n[m]['error_ascent'][j]:.2f}</td>" for j in joints)
+        + "".join(f"<td>{n[m]['error_descent'][j]:.2f}</td>" for j in joints)
+        + "</tr>"
+        for m in ["base", "pinn"]
+    )
     pr = s["primary"]
     sec = "".join(
         f"<tr><td>{k}</td><td>{v['hodges_lehmann']:+.2f}</td><td>{v['rank_biserial_r']:+.2f}"
@@ -148,6 +155,15 @@ walking error for 2 s; runs that never fail count as the horizon H = {h:.0f} s.<
 <tr><th rowspan=2>Model</th><th colspan=4>Error after switch (°)</th>
 <th colspan=3>Time to fail (s)</th><th colspan=3>Walking error (°)</th></tr>
 <tr>{head}<th>mean</th>{head}{head}</tr></thead><tbody>{rows}</tbody></table></div>
+<p><b>How to read time to fail:</b> both models cross the threshold about 2 s after the switch.
+That is before the first stair step (each stair recording starts with 2–3 s of walking up to the
+stairs) and within the network's 1.27 s context across the join between recordings, so it
+mostly reflects the join and the approach rather than the climbing itself.</p>
+<h2>On the stairs only</h2>
+<p>Error (°) on samples labelled as climbing, mean over people.</p>
+<div class=wrap><table><thead><tr><th>Model</th><th colspan=3>Climbing up</th>
+<th colspan=3>Climbing down</th></tr><tr><th></th>{head}{head}</tr></thead><tbody>{updown}
+</tbody></table></div>
 <h2>Test</h2>
 <p>Primary endpoint: error after switch averaged over hip, knee and ankle, paired across
 {pr["n"]} people (base − pinn). Wilcoxon signed-rank p = {pr["p"]:.3f}; rank-biserial
@@ -253,6 +269,7 @@ def method_body() -> str:
         ("Question", section(plan, "Question")),
         ("Data", section(data, "Recommendation: Camargo 2021")),
         ("Metrics", section(plan, "Metrics")),
+        ("Decisions log", section(plan, "Decisions log")),
     ]
     md = "\n\n".join(f"## {h}\n\n{t}" for h, t in parts)
     return "<h1>Method</h1>" + markdown.markdown(md, extensions=["tables"])
