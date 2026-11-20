@@ -188,3 +188,28 @@ with ±1e6. A short CPU run must then give exactly the same:
   - smallest effect of interest and the fold-consistency condition;
   - pooled validation score;
   - sampler, NaN masking, separate random streams and the no-leak test specified.
+- **2026-11-20, masks and pilot (job 23891411; tuning tasks 399 and 415, array 23891412,
+  commit cdf9eb2). No final runs exist yet.**
+  - **Masks, draw 0, median kept seconds per person:**
+
+    | Missing | Kept | Kept on stairs |
+    |---|---|---|
+    | 0% | 3244 s | 547 s |
+    | 50% | 1658 s | 286 s |
+    | 90% | 360 s | 56 s |
+    | 99% | 63 s (incl. the 30 s trial) | 6 s |
+
+    - Realised shares: 49.7%, 89.8% and 99.0%.
+    - At 99%, two people keep no stair angles.
+    - Kept validation seconds per fold at 99%: 173–198 s.
+  - **Calibration-trial setup:** the gyro check passes 20 of 22 people (all but AB10 and
+    AB13), giving 11–13 physics training people per fold.
+    - It differs from study 1's check on walking validation files, which passed 16 people.
+    - The rule is the same at every share, so it does not bias the comparison.
+  - **Timing:** `base` 7.5 min and `pinn` 11 min per task (`pinn` processes two batches per
+    step).
+    - Estimate for the remaining 510 tuning tasks: about 38 GPU-hours.
+    - With a 40 min limit per task, at most 170 GPU-hours.
+  - The pilot runs are genuine tuning runs; the full batch skips their indices.
+  - The training code is unchanged since commit cdf9eb2; later commits touched only the
+    summary, the plots and the website.
