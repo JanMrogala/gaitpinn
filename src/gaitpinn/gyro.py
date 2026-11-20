@@ -103,14 +103,18 @@ def _lsq_axes(files, joint) -> tuple[list, list]:
 
 
 def fit_alignment(
-    train: list[tuple[np.ndarray, np.ndarray]], val: list[tuple[np.ndarray, np.ndarray]]
+    train: list[tuple[np.ndarray, np.ndarray]],
+    val: list[tuple[np.ndarray, np.ndarray]],
+    pca_x: np.ndarray | None = None,
 ) -> dict:
     """Per joint, two candidate alignments fitted on walking TRAINING files:
       pca: each sensor's first principal gyro axis, signs by best correlation;
       lsq: each sensor's unit axis from a least-squares fit to the true joint speed.
     The one with the higher correlation on walking VALIDATION files is kept (no stair data).
+    pca_x: sensor data for the principal axes when they should come from more than `train`
+    (study 3: all walking training files, while signs and lsq use the calibration trial).
     """
-    x = np.concatenate([f[0] for f in train])
+    x = np.concatenate([f[0] for f in train]) if pca_x is None else pca_x
     pca = {seg: principal_axis(x[:, gyro_index(seg)].astype(float)).tolist() for seg in SEGMENTS}
     align = {"axes": pca, "joints": {}}
     for joint, (_, prox, dist) in JOINTS.items():

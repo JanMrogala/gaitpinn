@@ -20,6 +20,15 @@ case "$what" in
     part=small-g; time="${GP_TIME:-04:00:00}"
     script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"  # GP_ARRAY: e.g. a pilot subset
     args=""; extra=",GP_KIND=$what" ;;
+  gmasks|gtune|gfinal|glab)  # study 3 (PLAN3.md)
+    case "$what" in gmasks) n=1 ;; gtune) n=512 ;; gfinal) n=160 ;; glab) n=60 ;; esac
+    if [ "$what" = gfinal ] || [ "$what" = glab ]; then
+      test -f "$RUNS_LOCAL/chosen_g.json" || { echo "run: python -m gaitpinn.gaps gselect" >&2; exit 1; }
+      rsync -a "$RUNS_LOCAL/chosen_g.json" "$LUMI_HOST:$SCR/"
+    fi
+    part=small-g; time="${GP_TIME:-02:00:00}"
+    script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"
+    args=""; extra=",GP_KIND=$what" ;;
   final-strong)
     # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
     python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c['lam']=0.1; json.dump(c, open(sys.argv[2],'w'), indent=2)" \
