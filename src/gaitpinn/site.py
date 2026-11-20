@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 import markdown
+import numpy as np
 import plotly.offline
 
 from gaitpinn import runs as runrec
@@ -21,6 +22,7 @@ PAGES = [
     ("index.html", "Results"),
     ("people.html", "People"),
     ("study2.html", "Study 2"),
+    ("study3.html", "Study 3"),
     ("runs.html", "Runs"),
     ("method.html", "Method"),
 ]
@@ -400,6 +402,159 @@ document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
     return body, True
 
 
+def _test_line(label: str, w: dict, n: dict, a: str = "base", b: str = "pinn") -> str:
+    v = w.get("verdict")
+    head = f"<b>{html.escape(label)}:</b> " + (f"{html.escape(v)} " if v else "")
+    holm = f", Holm-adjusted p = {w['p_holm']:.3f}" if "p_holm" in w else ""
+    return (
+        f"<li>{head}(mean error on stairs {a} {n[a]['error_after_switch_mean3']:.2f}° vs {b} "
+        f"{n[b]['error_after_switch_mean3']:.2f}°; Wilcoxon p = {w['p']:.3f}{holm}, "
+        f"r = {w['rank_biserial_r']:+.2f}, Hodges–Lehmann ({a} − {b}) {w['hodges_lehmann']:+.2f}° "
+        f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}{nz_note(w)}).</li>"
+    )
+
+
+def study3_body(runs_dir: Path) -> tuple[str, bool]:
+    """Study 3 (PLAN3.md): gaps in the true angles of training and validation people."""
+    s = load_summary(runs_dir, "results3")
+    figs = load_summary(runs_dir, "figures3")
+    intro = (
+        "<h1>Study 3: gaps in the true angles</h1><p>As in study 2, one model is trained on "
+        "many people and tested on people it never saw. Here a share of the training and "
+        "validation people's true angles is removed in random 2 s blocks, while their sensors "
+        "stay complete. <code>base</code> learns only from the angles that remain; "
+        "<code>pinn</code> also applies its physics loss to the stretches without angles. "
+        "<code>pinn_lab</code> (secondary) is <code>pinn</code> without those stretches. Every "
+        "person keeps a 30 s fully labelled calibration trial. Test people are untouched. "
+        "Pre-registered in <code>PLAN3.md</code>.</p>"
+    )
+    if s is None or figs is None:
+        return intro + EMPTY, False
+    sh = s["shares"]
+    lines = "".join(
+        _test_line(f"{round(b['share'] * 100)}% missing", b["test"], b["numbers"])
+        for t, b in sh.items()
+        if "p_holm" in b["test"]
+    )
+    rows = ""
+    for b in sh.values():
+        n = b["numbers"]
+        cells = "".join(
+            f"<td>{n[m]['error_after_switch_mean3']:.2f}</td>" if m in n else "<td>–</td>"
+            for m in ("base", "pinn", "pinn_lab")
+        )
+        walk = "".join(
+            f"<td>{np.mean(list(n[m]['walk_error'].values())):.2f}</td>" for m in ("base", "pinn")
+        )
+        folds = " ".join(f"{v:+.2f}" for v in b["test"]["per_fold_median"].values())
+        rows += f"<tr><td>{round(b['share'] * 100)}%</td>{cells}{walk}<td>{folds}</td></tr>"
+    sec_lines = ""
+    if "s00" in sh:
+        sec_lines += _test_line(
+            "0% missing (reference, not in the Holm family)",
+            sh["s00"]["test"],
+            sh["s00"]["numbers"],
+        )
+    for b in sh.values():
+        w = b["secondary"].get("pinn_lab vs pinn/primary")
+        if w:
+            sec_lines += _test_line(
+                f"{round(b['share'] * 100)}%: pinn_lab vs pinn (does the unlabelled data help?)",
+                w,
+                b["numbers"],
+                "pinn_lab",
+                "pinn",
+            )
+    for b in sh.values():
+        w = b["secondary"].get("base vs pinn/primary/gyro-check people")
+        if w:
+            sec_lines += _test_line(
+                f"{round(b['share'] * 100)}%: the {w['n']} people who passed study 1's gyro check",
+                w,
+                b["numbers"],
+            )
+    if "trend" in s:
+        tr = s["trend"]
+        sec_lines += (
+            f"<li><b>Does the base − pinn difference grow with the share?</b> Page trend test "
+            f"over 50%, 90%, 99%: p = {tr['p']:.3f} (n = {tr['n']}).</li>"
+        )
+    tune_rows = ""
+    for key, row in sorted(s.get("tuning", {}).items()):
+        vals = ", ".join(
+            f"{k}: {v:.2f}" for k, v in sorted(row.items(), key=lambda kv: float(kv[0]))
+        )
+        tune_rows += f"<tr><td>{html.escape(key)}</td><td>{html.escape(vals)}</td></tr>"
+    mk = s.get("masks")
+    mask_html = ""
+    if mk:
+        mrows = ""
+        for key in sorted(k for k in mk["realised_share"] if k.endswith("/d0")):
+            ks = mk["kept_seconds"][key]
+            mrows += (
+                f"<tr><td>{html.escape(key.split('/')[0])}</td>"
+                f"<td>{mk['realised_share'][key] * 100:.1f}%</td>"
+                + "".join(
+                    f"<td>{ks[m]:.0f}</td>" for m in ("treadmill", "levelground", "ramp", "stair")
+                )
+                + "</tr>"
+            )
+        phys = "; ".join(f"{f}: {len(v['physics_people'])}" for f, v in sorted(mk["folds"].items()))
+        mask_html = (
+            "<h2>Masks</h2><p>Draw 0 shown; realised share is outside the calibration trial. "
+            "Kept seconds are medians over people, including the 30 s trial. Physics training "
+            f"people per fold (from the calibration trials, the same at every share): {phys}.</p>"
+            "<div class=wrap><table><thead><tr><th>share</th><th>realised</th><th>treadmill s</th>"
+            "<th>level ground s</th><th>ramp s</th><th>stair s</th></tr></thead><tbody>"
+            f"{mrows}</tbody></table></div>"
+        )
+    sec = "".join(
+        f"<tr><td>{round(b['share'] * 100)}% {html.escape(k)}</td>"
+        f"<td>{v['hodges_lehmann']:+.2f}</td>"
+        f"<td>{v['rank_biserial_r']:+.2f}</td><td>{v['p']:.3f}</td></tr>"
+        for b in sh.values()
+        for k, v in b["secondary"].items()
+    )
+    opts = "".join(
+        f'<option value="error_over_time_{t}">{round(b["share"] * 100)}% missing</option>'
+        for t, b in sh.items()
+    )
+    first = next(iter(sh))
+    body = f"""{intro}
+<div class=note><b>Pre-registered tests</b> (base vs pinn per share, paired across people,
+Holm-corrected over 50%, 90%, 99%; smallest effect of interest ±0.5°):<ul>{lines}</ul></div>
+<div data-fig="error_vs_share" style="height:480px"></div>
+<h2>Numbers (mean over people)</h2>
+<div class=wrap><table><thead><tr><th>missing</th><th>base</th><th>pinn</th><th>pinn_lab</th>
+<th>base walking</th><th>pinn walking</th><th>per-fold median base − pinn (folds 0–3)</th></tr>
+</thead><tbody>{rows}</tbody></table></div>
+<p>Error columns: error after switch to stairs, mean of hip, knee and ankle (°). Walking:
+level-ground walking error (°). Positive fold medians favour pinn.</p>
+<h2>Error over time since the switch</h2>
+<p><select id=share>{opts}</select></p>
+<div id=eot style="height:520px"></div>
+<h2>Secondary results</h2><ul>{sec_lines}</ul>
+{mask_html}
+<details><summary>Tuning: best validation score per λ (pinn) and weight decay (base)</summary>
+<div class=wrap><table><thead><tr><th>share / fold / model</th><th>value: best score (°)</th></tr>
+</thead><tbody>{tune_rows}</tbody></table></div></details>
+<details><summary>All secondary tests</summary>
+<p>Differences are first − second, not corrected for multiple tests; positive favours the
+second model.</p><div class=wrap><table>
+<thead><tr><th>share, comparison / measure / joint</th><th>HL diff</th><th>r</th><th>p</th></tr>
+</thead><tbody>{sec}</tbody></table></div></details>
+<script>
+const F={json.dumps(figs)};
+const cfg={{responsive:true,displaylogo:false}};
+document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
+  Plotly.newPlot(el,f.data,f.layout,cfg);}});
+const sel=document.getElementById('share');
+function eot(k){{const f=F[k]; Plotly.react('eot',f.data,f.layout,cfg);}}
+sel.onchange=()=>eot(sel.value); eot('error_over_time_{first}');
+</script>"""
+    return body, True
+
+
 def nz_note(w: dict) -> str:
     """Wilcoxon drops people with an exactly zero difference; say so when it happens."""
     k = w.get("n_nonzero", w["n"])
@@ -453,6 +608,8 @@ def build(runs_dir: Path, out: Path) -> None:
     (out / "people.html").write_text(page("people.html", "People", ppl, ppl_plot))
     s2, s2_plot = study2_body(runs_dir)
     (out / "study2.html").write_text(page("study2.html", "Study 2", s2, s2_plot))
+    s3, s3_plot = study3_body(runs_dir)
+    (out / "study3.html").write_text(page("study3.html", "Study 3", s3, s3_plot))
     (out / "runs.html").write_text(page("runs.html", "Runs", runs_body(runs_dir)))
     (out / "method.html").write_text(page("method.html", "Method", method_body()))
     (out / ".nojekyll").write_text("")

@@ -163,3 +163,75 @@ def test_study2_summary_and_page(tmp_path):
     site.build(tmp_path, tmp_path / "site")
     page = (tmp_path / "site" / "study2.html").read_text()
     assert "pinn_cal is better" in page and "Holm-adjusted" in page and "fold 3" in page
+
+
+def fake_gruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 13))):
+    rng = np.random.default_rng(2)
+    t = (np.arange(4000) - 2000) / 100
+    lab = np.where(t < 0, "walk", "stairascent").astype(object)
+    lab[2000:2200] = "walk-stairascent"
+    for i, p in enumerate(people):
+        for share in (0.0, 0.5, 0.9, 0.99):
+            models = [("base", 3.0), ("pinn", 2.0 if share == 0.99 else 3.0)]
+            if share > 0:
+                models.append(("pinn_lab", 3.0))
+            for m, extra in models:
+                for seed in range(5):
+                    y = rng.normal(0, 10, (4000, 3))
+                    e = rng.normal(0, 1, (4000, 3)) * np.where(t[:, None] < 0, 1, extra)
+                    score = np.ones(4000, bool)
+                    stream = {"t": t, "y": y, "score": score, "label": lab.astype(str)}
+                    stream["file"] = np.zeros(4000, int)
+                    walk = (e[:2000], score[:2000], {"levelground": (e[:2000], score[:2000])})
+                    met = metrics.run_metrics(stream, y + e, walk) | {"val_rmse": 2.0}
+                    rec = {
+                        "run_id": f"gfinal-{m}-s{round(share * 100):02d}-{p}-s{seed}-jx",
+                        "kind": "gfinal",
+                        "status": "done",
+                        "model": m,
+                        "person": p,
+                        "seed": seed,
+                        "share": share,
+                        "fold": {"fold": i % 4},
+                        "config": {"lr": 1e-3, "width": 64, "lam": 0.01},
+                        "metrics": met,
+                    }
+                    out = runs.write_run(d, rec)
+                    np.savez_compressed(
+                        out / "stream.npz",
+                        t=t,
+                        y=y,
+                        pred=y + e,
+                        score=score,
+                        label=lab.astype("S"),
+                        file_idx=np.zeros(4000, np.int16),
+                    )
+
+
+def test_study3_summary_and_page(tmp_path):
+    fake_gruns(tmp_path)
+    s = metrics.gsummary(tmp_path, require=12)
+    assert list(s["shares"]) == ["s00", "s50", "s90", "s99"]
+    assert "p_holm" not in s["shares"]["s00"]["test"]  # 0% is not in the primary family
+    assert s["shares"]["s99"]["test"]["verdict"] == "pinn is better"
+    assert s["shares"]["s50"]["test"]["verdict"] in ("inconclusive", "equivalent within ±0.5°")
+    assert "pinn_lab vs pinn/primary" in s["shares"]["s99"]["secondary"]
+    assert s["trend"]["n"] == 12
+    s = json.loads((tmp_path / "summary" / "results3.json").read_text())
+    figs = {"error_vs_share": plot.error_vs_share(s)}
+    for t, b in s["shares"].items():
+        figs[f"error_over_time_{t}"] = plot.error_over_time(b, models=["base", "pinn"])
+    (tmp_path / "summary" / "figures3.json").write_text(json.dumps(figs))
+    site.build(tmp_path, tmp_path / "site")
+    page = (tmp_path / "site" / "study3.html").read_text()
+    assert "99% missing" in page and "pinn is better" in page and "error_vs_share" in page
+
+
+def test_study3_verdict_rules():
+    w = {"p_holm": 0.01, "rank_biserial_r": 0.6, "hl_ci95": [0.2, 0.9]}
+    assert metrics.gverdict(w, {0: 0.3, 1: 0.2, 2: 0.1, 3: -0.1}) == "pinn is better"
+    assert metrics.gverdict(w, {0: 0.3, 1: -0.2, 2: 0.1, 3: -0.1}) == "pinn is better (pooled only)"
+    w = {"p_holm": 0.3, "rank_biserial_r": 0.1, "hl_ci95": [-0.2, 0.3]}
+    assert metrics.gverdict(w, {}) == "equivalent within ±0.5°"
+    w = {"p_holm": 0.3, "rank_biserial_r": 0.1, "hl_ci95": [-0.2, 0.7]}
+    assert metrics.gverdict(w, {}) == "inconclusive"

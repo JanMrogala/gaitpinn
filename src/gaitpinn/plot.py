@@ -20,6 +20,7 @@ COLORS = {
     "pinn_strong": "#55A868",
     "pinn_cal": "#C44E52",
     "base_cal": "#8172B3",
+    "pinn_lab": "#937860",
 }
 BANDS = {
     "base": "rgba(76,114,176,0.18)",
@@ -27,6 +28,7 @@ BANDS = {
     "pinn_strong": "rgba(85,168,104,0.18)",
     "pinn_cal": "rgba(196,78,82,0.18)",
     "base_cal": "rgba(129,114,179,0.18)",
+    "pinn_lab": "rgba(147,120,96,0.18)",
 }
 LAYOUT = {
     "template": "plotly_white",
@@ -194,6 +196,59 @@ def people(runs_dir: Path, s: dict, t0: float = -10.0, t1: float = 40.0) -> dict
     return out
 
 
+def error_vs_share(s3: dict, models=("base", "pinn", "pinn_lab")) -> dict:
+    """Study 3 main plot: error on stairs (mean of 3 joints) against the share of missing
+    angles; mean over people with a t-based 95% CI."""
+    from scipy import stats
+
+    tags = list(s3["shares"])
+    x = [f"{round(s3['shares'][t]['share'] * 100)}%" for t in tags]
+    traces = []
+    for m in models:
+        ys, lo, hi, xs = [], [], [], []
+        for t, xl in zip(tags, x, strict=True):
+            v = s3["shares"][t]["primary_values"].get(m)
+            if v is None:
+                continue
+            v = np.asarray(v)
+            half = stats.t.ppf(0.975, len(v) - 1) * v.std(ddof=1) / np.sqrt(len(v))
+            xs.append(xl)
+            ys.append(float(v.mean()))
+            lo.append(float(half))
+            hi.append(float(half))
+        if not xs:
+            continue
+        traces.append(
+            {
+                "x": xs,
+                "y": ys,
+                "name": m,
+                "type": "scatter",
+                "mode": "lines+markers",
+                "error_y": {"type": "data", "array": hi, "visible": True},
+                "line": {
+                    "color": COLORS[m],
+                    "width": 2,
+                    "dash": "dot" if m == "pinn_lab" else "solid",
+                },
+                "hovertemplate": f"{m}: %{{y:.2f}}°<extra></extra>",
+            }
+        )
+    layout = LAYOUT | {
+        "hovermode": "x",
+        "title": {"text": "Error on stairs vs share of training angles missing"},
+        "xaxis": {
+            "title": {"text": "share of true angles missing (training and validation people)"},
+            "type": "category",
+        },
+        "yaxis": {
+            "title": {"text": "error after switch, mean of hip, knee, ankle (°)"},
+            "rangemode": "tozero",
+        },
+    }
+    return {"data": traces, "layout": layout}
+
+
 def main() -> None:
     import argparse
 
@@ -226,6 +281,16 @@ def main() -> None:
                 title="Control: label-free calibration of base (gyro term only) vs pinn_cal",
             )
         (a.runs / "summary" / "figures2.json").write_text(json.dumps(figs2))
+    r3 = a.runs / "summary" / "results3.json"
+    if r3.exists():  # study 3
+        s3 = json.loads(r3.read_text())
+        figs3 = {"error_vs_share": error_vs_share(s3)}
+        for t, b in s3["shares"].items():
+            pct = round(b["share"] * 100)
+            figs3[f"error_over_time_{t}"] = error_over_time(
+                b, models=["base", "pinn"], title=f"{pct}% of training angles missing"
+            )
+        (a.runs / "summary" / "figures3.json").write_text(json.dumps(figs3))
     print("wrote figures.json and people.json")
 
 

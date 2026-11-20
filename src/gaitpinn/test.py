@@ -401,12 +401,23 @@ def bout_curves(runs_dir, by, people, models=MODELS) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["select", "summary", "xselect", "xsummary"])
+    ap.add_argument("action", choices=["select", "summary", "xselect", "xsummary", "gsummary"])
     ap.add_argument("--runs", type=Path, required=True)
     a = ap.parse_args()
     if a.action == "xselect":
         for f, v in xselect(a.runs).items():
             print(f, {k: v[k] for k in v if not k.startswith("_")})
+        return
+    if a.action == "gsummary":
+        s = gsummary(a.runs)
+        for t, b in s["shares"].items():
+            w = b["test"]
+            print(
+                t,
+                w.get("verdict", "(secondary)"),
+                f"p={w['p']:.4f}",
+                f"p_holm={w.get('p_holm', float('nan')):.4f}",
+            )
         return
     if a.action == "xsummary":
         s = xsummary(a.runs)
@@ -662,6 +673,211 @@ def xsummary(runs_dir: Path, require: int = 22) -> dict:
     }
     (runs_dir / "summary").mkdir(exist_ok=True)
     (runs_dir / "summary" / "results2.json").write_text(json.dumps(out))
+    return out
+
+
+GSHARES = [0.0, 0.5, 0.9, 0.99]
+GPRIMARY = [0.5, 0.9, 0.99]
+SESOI = 0.5  # degrees, smallest effect of interest (PLAN3.md)
+
+
+def gtag(share: float) -> str:
+    return f"s{round(share * 100):02d}"
+
+
+def gverdict(w: dict, folds: dict) -> str:
+    """PLAN3.md: Holm p, direction, fold consistency, then equivalence or inconclusive."""
+    if w["p_holm"] < 0.05 and w["rank_biserial_r"] != 0:
+        win = "pinn" if w["rank_biserial_r"] > 0 else "base"
+        agree = sum((v > 0) == (win == "pinn") and v != 0 for v in folds.values())
+        return f"{win} is better" + ("" if agree >= 3 else " (pooled only)")
+    lo, hi = w["hl_ci95"]
+    if -SESOI < lo and hi < SESOI:
+        return f"equivalent within ±{SESOI:g}°"
+    return "inconclusive"
+
+
+def gsummary(runs_dir: Path, require: int = 22) -> dict:
+    """Final study-3 runs -> summary/results3.json (one study-2-shaped block per share)."""
+    from scipy import stats
+
+    from gaitpinn import runs as runrec
+
+    recs = runrec.load_runs(runs_dir)
+    final = [r for r in recs if r.get("kind") == "gfinal" and r.get("status") == "done"]
+    fold_of = {r["person"]: r["fold"]["fold"] for r in final}
+    gyro_ok = []
+    checks = runs_dir / "checks" / "checks.jsonl"
+    if checks.exists():
+        ok = {
+            json.loads(line)["person"]: json.loads(line)["gyro_ok"]
+            for line in checks.read_text().splitlines()
+        }
+        gyro_ok = sorted(p for p in fold_of if ok.get(p))
+    keys = ["error_after_switch", "walk_error", "error_ascent", "error_descent"]
+    out = {"study": 3, "shares": {}, "folds": fold_of, "gyro_check_people": gyro_ok}
+    per_all = {}
+    for share in GSHARES:
+        rs = [r for r in final if r["share"] == share]
+        if not rs:
+            continue
+        models = [m for m in ("base", "pinn", "pinn_lab") if any(r["model"] == m for r in rs)]
+        people = sorted({r["person"] for r in rs})
+        by = {
+            (m, p): [r for r in rs if r["model"] == m and r["person"] == p]
+            for m in models
+            for p in people
+        }
+        complete = [p for p in people if all(len(by[(m, p)]) == 5 for m in ("base", "pinn"))]
+        if require and len(complete) < require:
+            raise SystemExit(f"{gtag(share)}: only {len(complete)} people have all base/pinn runs")
+        models = ["base", "pinn"] + [
+            m for m in models[2:] if all(len(by[(m, p)]) == 5 for p in complete)
+        ]
+        H = min(r["metrics"]["stairs_seconds"] for r in rs if r["person"] in complete)
+        per = {
+            p: {
+                m: {
+                    **{
+                        k: {
+                            j: float(np.mean([r["metrics"][k][j] for r in by[(m, p)]]))
+                            for j in JOINTS
+                        }
+                        for k in keys
+                    },
+                    "run_ids": sorted(r["run_id"] for r in by[(m, p)]),
+                }
+                for m in models
+            }
+            for p in complete
+        }
+        per_all[share] = per
+
+        def vec(m, key, j=None, ppl=None, per=per, complete=complete):
+            ppl = ppl or complete
+            if j is None:
+                return np.array([np.mean([per[p][m][key][k] for k in JOINTS]) for p in ppl])
+            return np.array([per[p][m][key][j] for p in ppl])
+
+        def fold_medians(a, b, vec=vec, complete=complete):
+            d = vec(a, "error_after_switch") - vec(b, "error_after_switch")
+            return {
+                f: float(
+                    np.median([x for x, p in zip(d, complete, strict=True) if fold_of[p] == f])
+                )
+                for f in sorted(set(fold_of.values()))
+            }
+
+        main = wilcoxon(vec("base", "error_after_switch"), vec("pinn", "error_after_switch"))
+        main["per_fold_median"] = fold_medians("base", "pinn")
+        sec = {}
+        for a, b in [("base", "pinn"), ("pinn_lab", "pinn"), ("base", "pinn_lab")]:
+            if a not in models or b not in models:
+                continue
+            if (a, b) != ("base", "pinn"):
+                sec[f"{a} vs {b}/primary"] = wilcoxon(
+                    vec(a, "error_after_switch"), vec(b, "error_after_switch")
+                ) | {"per_fold_median": fold_medians(a, b)}
+            for key in ("error_after_switch", "error_ascent", "error_descent", "walk_error"):
+                for j in JOINTS:
+                    sec[f"{a} vs {b}/{key}/{j}"] = wilcoxon(vec(a, key, j), vec(b, key, j))
+        if len(gyro_ok) > 5:
+            g = [p for p in complete if p in gyro_ok]
+            sec["base vs pinn/primary/gyro-check people"] = wilcoxon(
+                vec("base", "error_after_switch", ppl=g), vec("pinn", "error_after_switch", ppl=g)
+            )
+        numbers = {
+            m: {
+                "error_after_switch": {
+                    j: float(vec(m, "error_after_switch", j).mean()) for j in JOINTS
+                },
+                "error_after_switch_mean3": float(vec(m, "error_after_switch").mean()),
+                "walk_error": {j: float(vec(m, "walk_error", j).mean()) for j in JOINTS},
+                "error_ascent": {j: float(vec(m, "error_ascent", j).mean()) for j in JOINTS},
+                "error_descent": {j: float(vec(m, "error_descent", j).mean()) for j in JOINTS},
+            }
+            for m in models
+        }
+        primary_vals = {m: vec(m, "error_after_switch").tolist() for m in models}
+        out["shares"][gtag(share)] = {
+            "share": share,
+            "models": models,
+            "people": complete,
+            "H": H,
+            "per_person": per,
+            "numbers": numbers,
+            "primary_values": primary_vals,
+            "test": main,
+            "secondary": sec,
+            "curves": error_curves(runs_dir, by, complete, H, models),
+            "bouts": bout_curves(runs_dir, by, complete, models),
+            "configs": {
+                m: {str(fold_of[p]): by[(m, p)][0]["config"] for p in complete} for m in models
+            },
+        }
+    prim = [gtag(s) for s in GPRIMARY if gtag(s) in out["shares"]]
+    if prim:
+        ws = [out["shares"][t]["test"] for t in prim]
+        for w, padj in zip(ws, holm([w["p"] for w in ws]), strict=True):
+            w["p_holm"] = padj
+            w["verdict"] = gverdict(w, w["per_fold_median"])
+    if all(s in per_all for s in GPRIMARY):
+        ppl = sorted(set.intersection(*(set(per_all[s]) for s in GPRIMARY)))
+        d = np.array(
+            [
+                [
+                    np.mean(
+                        [
+                            per_all[s][p]["base"]["error_after_switch"][j]
+                            - per_all[s][p]["pinn"]["error_after_switch"][j]
+                            for j in JOINTS
+                        ]
+                    )
+                    for s in GPRIMARY
+                ]
+                for p in ppl
+            ]
+        )
+        pt = stats.page_trend_test(d, predicted_ranks=[1, 2, 3])
+        out["trend"] = {"n": len(ppl), "statistic": float(pt.statistic), "p": float(pt.pvalue)}
+    tune = [r for r in recs if r.get("kind") == "gtune" and r.get("status") == "done"]
+    out["tuning"] = {}
+    for r in tune:
+        m = r["model"].split("-")[0]
+        knob = "lam" if m == "pinn" else "weight_decay"
+        key = f"{gtag(r['share'])}/fold{r['fold']['fold']}/{m}"
+        row = out["tuning"].setdefault(key, {})
+        v = str(r["config"][knob])
+        row[v] = min(row.get(v, np.inf), r["metrics"]["val_rmse"])
+    masks = [r for r in recs if r.get("kind") == "gmasks" and r.get("status") == "done"]
+    if masks:
+        m = masks[-1]["metrics"]
+        out["masks"] = {
+            "folds": m["folds"],
+            "realised_share": {
+                key: float(
+                    np.mean([v["masks"][key]["realised_share"] for v in m["people"].values()])
+                )
+                for key in next(iter(m["people"].values()))["masks"]
+            },
+            "kept_seconds": {
+                key: {
+                    mode: float(
+                        np.median(
+                            [
+                                v["masks"][key]["kept_seconds"].get(mode, 0.0)
+                                for v in m["people"].values()
+                            ]
+                        )
+                    )
+                    for mode in ("treadmill", "levelground", "ramp", "stair")
+                }
+                for key in next(iter(m["people"].values()))["masks"]
+            },
+            "setup_gyro_ok": {n: v["setup"]["gyro_ok"] for n, v in m["people"].items()},
+        }
+    (runs_dir / "summary").mkdir(exist_ok=True)
+    (runs_dir / "summary" / "results3.json").write_text(json.dumps(out))
     return out
 
 
