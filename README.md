@@ -110,9 +110,8 @@ hip, knee and ankle, n = 22, Wilcoxon, Holm-corrected):
 - **Physics during training:** tuning chose the smallest λ (0.001) in every fold. The
   validation score got worse as λ grew, so the final `pinn` is close to `base`.
 - **Self-calibration:** it did not help on the new people. If anything it made the knee
-  slightly worse (7.70° vs 7.47° for `pinn`; uncorrected secondary test p = 0.05). The control
-  `base_cal` behaves the same way (7.37°), so this is about label-free adaptation in general,
-  not about physics training.
+  slightly worse (7.70° vs 7.47° for `pinn`; p = 0.05, one of about 65 uncorrected secondary
+  tests, so suggestive only). The control `base_cal` shows the same pattern (7.37°).
 - **Per fold:** folds 0–2 are within ±0.32°. In fold 3, `base` is better by a median of
   0.45° (vs `pinn`) and 0.66° (vs `pinn_cal`).
 - **The 16 people who passed study 1's gyro check:** the same picture (all p > 0.27).
@@ -129,3 +128,8 @@ calibration diagnostic.
 - Input normalization uses all of a person's walking train files (sensor signals only), not
   just the 2-minute calibration walk.
 - Training targets include the same IK glitches as study 1.
+- **Run-to-run noise:** on the GPU, the same configuration and seed does not give the same
+  network. Retraining a fold's chosen configuration at the tuning seed changed its validation
+  score by up to 0.54°, and the 5 final seeds spread by 0.3–0.8°. The per-fold choices of lr,
+  width and weight decay are therefore partly noise. The λ ordering was the same in all four
+  folds. The final numbers average 5 seeds.

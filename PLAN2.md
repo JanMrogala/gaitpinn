@@ -243,3 +243,7 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
   and completed. Result: no clear difference in any of the three tests (README, website).
   - Reporting fix made after the result: the per-fold medians now use the primary endpoint
     (each person's mean over the three joints) instead of pooling person × joint differences.
+  - Check after the result: the final runs' configurations and calibration settings equal
+    `chosen_x.json` exactly (commit 96b4e15). The difference between a tuning score and the
+    `xcal` retrain of the same configuration and seed (up to 0.54°) is GPU run-to-run noise;
+    it is listed in the README's limitations.
