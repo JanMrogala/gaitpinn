@@ -238,3 +238,8 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
   - Diagnostic: for all 12 validation people, both physics terms score lower at the true
     angles than at the original predictions, so calibration has a reason to help.
   - Final batch: 40 tasks, 1.5 h limit each (at most 30 GPU-hours).
+- **2026-11-20, final runs done (array 23872835).** Every task was first requeued by a LUMI
+  error ("user env retrieval failed") before the job script started, then released unchanged
+  and completed. Result: no clear difference in any of the three tests (README, website).
+  - Reporting fix made after the result: the per-fold medians now use the primary endpoint
+    (each person's mean over the three joints) instead of pooling person × joint differences.

@@ -352,12 +352,14 @@ def study2_body(runs_dir: Path) -> tuple[str, bool]:
         )
     dg = s["calibration"].get("diagnostic", {})
     if dg:
-        better = sum(v["true"]["gyro"] < v["pred"]["gyro"] for v in dg.values())
+        gyro_on = [v for v in dg.values() if v["pred"]["gyro"] > 0 or v["true"]["gyro"] > 0]
+        better = sum(v["true"]["gyro"] < v["pred"]["gyro"] for v in gyro_on)
         sbetter = sum(v["true"]["swing"] < v["pred"]["swing"] for v in dg.values())
         cal += (
             f"<li>Diagnostic (validation people): the true angles score lower than the "
-            f"predictions on the gyro term for {better} of {len(dg)} and on the swing term for "
-            f"{sbetter} of {len(dg)}; calibration can only help where they do.</li>"
+            f"predictions on the gyro term for {better} of {len(gyro_on)} (the gate switched "
+            f"the gyro term off for the other {len(dg) - len(gyro_on)}) and on the swing term "
+            f"for {sbetter} of {len(dg)}; calibration can only help where they do.</li>"
         )
     sec = "".join(
         f"<tr><td>{html.escape(k)}</td><td>{v['hodges_lehmann']:+.2f}</td>"
@@ -381,7 +383,10 @@ independent than they are. Median difference (first − second, °) per fold:</p
 <tbody>{folds}</tbody></table></div>
 <h2>Self-calibration</h2><ul>{cal}</ul>
 {control}
-<details><summary>Secondary results</summary><div class=wrap><table>
+<details><summary>Secondary results</summary>
+<p>Differences are first − second, not corrected for multiple tests. For errors a positive
+value means the second model is better; for time to fail (longer is better) a positive value
+means the first model is better.</p><div class=wrap><table>
 <thead><tr><th>comparison / measure / joint</th><th>HL diff</th><th>r</th><th>p</th></tr>
 </thead><tbody>{sec}</tbody></table></div></details>
 <h2>Around each stair entry</h2>

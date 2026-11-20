@@ -37,6 +37,9 @@ python -m gaitpinn.plot --runs ../runs            # figures
 make site                                         # website into ../site
 ```
 
+Study 2 (`PLAN2.md`) uses the same steps with `prepare-x`, `xtune`, `xcal` and `xfinal`, and
+`python -m gaitpinn.test xselect` / `xsummary`.
+
 ## Results
 
 **No clear difference.** After the switch to stairs, `pinn` did not keep a lower joint-angle
@@ -87,3 +90,42 @@ scales). It was compared with `base` by the same test on the same 16 people.
   models alike.
 - **Sample:** n = 16 after the pre-registered gyro-check exclusions. The result on all 22 is
   reported alongside.
+
+## Study 2: one model for many people
+
+Plan: `PLAN2.md`. One network is trained on many people (walking, ramps and stairs) and tested
+on people it never saw, in 4 folds so that every person is tested once. `pinn_cal` is `pinn`
+self-calibrated to each new person on 2 minutes of their unlabelled walking, using only the
+physics losses.
+
+**No clear difference in any of the three pre-registered tests** (error after switch, mean of
+hip, knee and ankle, n = 22, Wilcoxon, Holm-corrected):
+
+| Test | Mean error | p | Holm p | r | Hodges–Lehmann (95% CI) |
+|---|---|---|---|---|---|
+| `base` vs `pinn` | 7.31° vs 7.30° | 0.588 | 1.000 | +0.14 | +0.04° (-0.13 to +0.20) |
+| `base` vs `pinn_cal` | 7.31° vs 7.36° | 0.702 | 1.000 | -0.10 | -0.03° (-0.20 to +0.15) |
+| `pinn` vs `pinn_cal` | 7.30° vs 7.36° | 0.159 | 0.478 | -0.35 | -0.08° (-0.16 to +0.03) |
+
+- **Physics during training:** tuning chose the smallest λ (0.001) in every fold. The
+  validation score got worse as λ grew, so the final `pinn` is close to `base`.
+- **Self-calibration:** it did not help on the new people. If anything it made the knee
+  slightly worse (7.70° vs 7.47° for `pinn`; uncorrected secondary test p = 0.05). The control
+  `base_cal` behaves the same way (7.37°), so this is about label-free adaptation in general,
+  not about physics training.
+- **Per fold:** folds 0–2 are within ±0.32°. In fold 3, `base` is better by a median of
+  0.45° (vs `pinn`) and 0.66° (vs `pinn_cal`).
+- **The 16 people who passed study 1's gyro check:** the same picture (all p > 0.27).
+
+Every number comes from `runs/summary/results2.json` (`gaitpinn.test xsummary`), built from
+the 440 final records `xfinal-<model>-<person>-s<seed>-j23872835_<task>` (4 models × 22
+people × 5 seeds). The website's Study 2 page shows the plots, per-fold choices and the
+calibration diagnostic.
+
+**Limitations:**
+
+- People in a fold share trained models, so the 22 pairs are not fully independent.
+- The configuration and calibration setting can differ per fold.
+- Input normalization uses all of a person's walking train files (sensor signals only), not
+  just the 2-minute calibration walk.
+- Training targets include the same IK glitches as study 1.

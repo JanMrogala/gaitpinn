@@ -561,11 +561,16 @@ def xsummary(runs_dir: Path, require: int = 22) -> dict:
         w["per_fold_median"] = {
             f: float(
                 np.median(
-                    [
-                        per[p][a]["error_after_switch"][j] - per[p][b]["error_after_switch"][j]
+                    [  # primary endpoint per person: mean over the three joints
+                        np.mean(
+                            [
+                                per[p][a]["error_after_switch"][j]
+                                - per[p][b]["error_after_switch"][j]
+                                for j in JOINTS
+                            ]
+                        )
                         for p in complete
                         if fold_of[p] == f
-                        for j in JOINTS
                     ]
                 )
             )
