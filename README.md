@@ -107,6 +107,10 @@ hip, knee and ankle, n = 22, Wilcoxon, Holm-corrected):
 | `base` vs `pinn_cal` | 7.31° vs 7.36° | 0.702 | 1.000 | -0.10 | -0.03° (-0.20 to +0.15) |
 | `pinn` vs `pinn_cal` | 7.30° vs 7.36° | 0.159 | 0.478 | -0.35 | -0.08° (-0.16 to +0.03) |
 
+For `pinn` vs `pinn_cal`, one person (AB16) has exactly zero difference: the label-free gate
+switched off the gyro term, the only calibration term in that fold. The Wilcoxon test drops
+that person, so this test uses 21 people.
+
 - **Physics during training:** tuning chose the smallest λ (0.001) in every fold. The
   validation score got worse as λ grew, so the final `pinn` is close to `base`.
 - **Self-calibration:** it did not help on the new people. If anything it made the knee

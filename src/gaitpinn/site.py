@@ -317,7 +317,7 @@ def study2_body(runs_dir: Path) -> tuple[str, bool]:
             f"{n[a]['error_after_switch_mean3']:.2f}° vs {n[b]['error_after_switch_mean3']:.2f}°; "
             f"Wilcoxon p = {w['p']:.3f}, Holm-adjusted p = {w['p_holm']:.3f}, r = "
             f"{w['rank_biserial_r']:+.2f}, Hodges–Lehmann {w['hodges_lehmann']:+.2f}° "
-            f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}).</li>"
+            f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}{nz_note(w)}).</li>"
         )
     head = "".join(f"<th>{j}</th>" for j in joints)
     rows = ""
@@ -398,6 +398,12 @@ document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
   Plotly.newPlot(el,f.data,f.layout,cfg);}});
 </script>"""
     return body, True
+
+
+def nz_note(w: dict) -> str:
+    """Wilcoxon drops people with an exactly zero difference; say so when it happens."""
+    k = w.get("n_nonzero", w["n"])
+    return f"; {w['n'] - k} with zero difference, so the test uses {k}" if k < w["n"] else ""
 
 
 def runs_body(runs_dir: Path) -> str:

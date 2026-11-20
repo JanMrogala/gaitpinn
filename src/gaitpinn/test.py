@@ -172,6 +172,7 @@ def wilcoxon(base: np.ndarray, pinn: np.ndarray, seed: int = 0) -> dict:
     boots = [hl(d[rng.integers(0, len(d), len(d))]) for _ in range(2000)]
     return {
         "n": int(len(d)),
+        "n_nonzero": int(len(nz)),  # zero differences are dropped by zero_method="wilcox"
         "p": float(res.pvalue),
         "statistic": float(res.statistic),
         "rank_biserial_r": r,

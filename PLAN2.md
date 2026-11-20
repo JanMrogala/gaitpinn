@@ -247,3 +247,10 @@ signed-rank with `zero_method="wilcox"`, Holm-corrected:
     `chosen_x.json` exactly (commit 96b4e15). The difference between a tuning score and the
     `xcal` retrain of the same configuration and seed (up to 0.54°) is GPU run-to-run noise;
     it is listed in the README's limitations.
+- **2026-11-20, independent check.** A separate recomputation of all headline numbers from the
+  run records matched. A code audit found no use of test people's labels outside scoring.
+  - Reported n for `pinn` vs `pinn_cal` corrected: AB16 has a zero difference and is dropped
+    by `zero_method="wilcox"`, so the test uses 21 people.
+  - As noted under Data, the target-quality rule reads targets to decide which files exist for
+    a person. That decides which files feed their input normalization and calibration walk,
+    so "never feeds a model" above is slightly too strong.
