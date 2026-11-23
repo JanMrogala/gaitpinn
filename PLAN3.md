@@ -213,3 +213,14 @@ with ±1e6. A short CPU run must then give exactly the same:
   - The pilot runs are genuine tuning runs; the full batch skips their indices.
   - The training code is unchanged since commit cdf9eb2; later commits touched only the
     summary, the plots and the website.
+- **2026-11-23, tuning done (512 runs: arrays 23891412, 23892357, 23963697 and 23964460; the
+  first chunk waited in LUMI's queue over the weekend). Choices frozen in `runs/chosen_g.json`
+  before any final run.**
+  - **λ:** 0.001 won in 15 of 16 share × fold cells; the exception is 99% missing, fold 0
+    (0.01).
+    - As pre-stated: validation preferred almost no physics.
+    - In every cell, `pinn`'s best validation score is above `base`'s, at every share
+      (0%: by 0.08–0.38°; 99%: by 0.13–0.69°).
+  - **`base` weight decay:** varies; 1e-3 (the new top value) won at 90% fold 3 and at 99%
+    folds 0 and 1.
+  - Ledger after tuning: 33.1 GPU-hours in total for the project.
