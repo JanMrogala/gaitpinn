@@ -158,3 +158,33 @@ def test_lost_angles_never_change_anything(people, tmp_path, model, share):
             assert got[1][key] == ref[1][key], key
         for k in ref[2]:
             assert torch.equal(got[2][k], ref[2][k]), k
+
+
+def test_study4_network_never_sees_the_gyros():
+    from gaitpinn import cross
+
+    gyro_cols = {len(data.EMG) + i for i, c in enumerate(data.IMU) if "_Gyro_" in c}
+    for name in ("emg", "emg_acc"):
+        assert not gyro_cols & set(cross.input_channels(name))
+    assert len(cross.input_channels("emg")) == len(data.EMG)
+    assert len(cross.input_channels("emg_acc")) == len(data.EMG) + 12
+    torch.manual_seed(0)
+    for inputs in ("emg", "emg_acc"):
+        cfg = CFG | {"inputs": inputs, "swing": False}
+        net = cross.XModel(cfg, np.zeros(3), np.ones(3)).eval()
+        x = torch.randn(2, 35, 400)
+        x2 = x.clone()
+        x2[:, sorted(gyro_cols)] = torch.randn(2, len(gyro_cols), 400) * 100
+        with torch.no_grad():
+            assert torch.equal(net(x)[0], net(x2)[0])
+        assert net(x)[1] is None  # no torque output without the swing term
+
+
+def test_study4_pinn_trains_with_gyro_term_only(people):
+    torch.set_num_threads(1)
+    tr = [gaps.GapPerson(people / f"{n}.h5", 0.9, 7) for n in ("P1", "P2")]
+    va = [gaps.GapPerson(people / "P3.h5", 0.9, 7, setup=False)]
+    cfg = CFG | {"inputs": "emg", "swing": False, "lam": 1.0}
+    _, out = gaps.fit(cfg, tr, va, 7, torch.device("cpu"))
+    h = out["history"]
+    assert all(e["gyro"] > 0 and e["swing"] == 0 for e in h)

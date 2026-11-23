@@ -357,8 +357,9 @@ def fit(cfg, train_p, val_p, seed, dev, unlabelled=True, trace=False):
     gterm = sterm = None
     if pinn:
         gterm = gyro.GyroTerm({j: 1.0 for j in gyro.JOINTS}).to(dev)
-        sterm = swing.SwingTerm(train_p[0].body, 1.0, 1.0, cfg["swing_init"]).to(dev)
-        params += list(sterm.parameters())
+        if cfg.get("swing", True):  # study 4: gyro term only
+            sterm = swing.SwingTerm(train_p[0].body, 1.0, 1.0, cfg["swing_init"]).to(dev)
+            params += list(sterm.parameters())
     opt = torch.optim.Adam(params, lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     warm = model.net.receptive_field - 1
     smp = Sampler(train_p, cfg, ratio, seed, warm)
@@ -523,9 +524,30 @@ def gselect(runs_dir: Path) -> dict:
     return out
 
 
+# Study 4 feasibility pilot (PLAN4.md): fold 0 only, validation people only, before any
+# study-4 plan is frozen. lr 3e-3 and width 128 throughout.
+PILOT4 = (
+    [
+        {"share": sh, "model": "base", "inputs": "emg", "weight_decay": wd, "lam": 0.0}
+        for sh in (0.0, 0.9, 0.99)
+        for wd in (0.0, 1e-4)
+    ]
+    + [
+        {"share": sh, "model": "pinn", "inputs": "emg", "weight_decay": 0.0, "lam": lam}
+        for sh in (0.0, 0.9, 0.99)
+        for lam in (0.01, 0.1, 1.0, 10.0)
+    ]
+    + [
+        {"share": 0.99, "model": "base", "inputs": "emg_acc", "weight_decay": 0.0, "lam": 0.0},
+        {"share": 0.99, "model": "pinn", "inputs": "emg_acc", "weight_decay": 0.0, "lam": 1.0},
+    ]
+)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("kind", choices=["gmasks", "gtune", "gfinal", "gselect"])
+    ap.add_argument("kind", choices=["gmasks", "gtune", "gfinal", "gselect", "g4pilot"])
+    ap.add_argument("--index", type=int, help="g4pilot: entry of PILOT4")
     ap.add_argument("--h5", type=Path)
     ap.add_argument("--runs", type=Path, required=True)
     ap.add_argument("--share", type=float)
@@ -553,17 +575,32 @@ def main() -> None:
         rec |= {"metrics": masks_summary(a.h5, people, fl), "status": "done"}
         runs.write_run(a.runs, rec)
         return
+    if a.kind == "g4pilot":
+        e = PILOT4[a.index]
+        a.share, a.fold, a.model = e["share"], 0, e["model"]
     if a.share not in SHARES:
         raise SystemExit(f"share must be one of {SHARES}")
     f = fl[a.fold]
     cdir = a.code / "configs"
-    seed = TUNE_SEED if a.kind == "gtune" else a.seed
+    seed = TUNE_SEED if a.kind in ("gtune", "g4pilot") else a.seed
     t0 = time.time()
     train_p = [GapPerson(a.h5 / f"{p}.h5", a.share, seed) for p in f["train"]]
     val_p = [GapPerson(a.h5 / f"{p}.h5", a.share, seed, setup=False) for p in f["val"]]
     extra = {"fold": f, "share": a.share, "draw": seed, "prep_seconds": round(time.time() - t0, 1)}
     extra |= people_info(train_p, val_p)
     mx = {"max_epochs": a.max_epochs} if a.max_epochs else {}
+    if a.kind == "g4pilot":
+        base_cfg = yaml.safe_load((cdir / f"g{e['model']}.yaml").read_text())
+        c = {k: v for k, v in base_cfg.items() if k != "grid"} | mx
+        c |= {"lr": 3e-3, "width": 128, "swing": False, "study": 4}
+        c |= {k: e[k] for k in ("inputs", "weight_decay", "lam")}
+        name = f"{e['model']}-{e['inputs']}-{share_tag(a.share)}-p{a.index:02d}"
+        rec = cross.record("g4pilot", name, "fold0", seed, a.code, extra | {"config": c})
+        runs.write_run(a.runs, rec)
+        _, out = fit(c, train_p, val_p, seed, dev)
+        rec |= {"metrics": {"val_rmse": out["val_rmse"]}, "training": out, "status": "done"}
+        runs.write_run(a.runs, rec)
+        return
     if a.kind == "gtune":
         if a.model == "pinn_lab":
             raise SystemExit("pinn_lab is not tuned")

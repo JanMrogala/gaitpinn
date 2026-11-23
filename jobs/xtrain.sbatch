@@ -29,6 +29,7 @@ MODULE=gaitpinn.cross
 case "$GP_KIND" in g*) MODULE=gaitpinn.gaps ;; esac
 case "$GP_KIND" in
   gmasks) args=(gmasks) ;;
+  g4pilot) args=(g4pilot --index "$i") ;;
   gtune)  args=(gtune --share "${SHARES[$((i / 128))]}" --fold $(((i / 32) % 4))
                 --model "${MODELS[$(((i / 16) % 2))]}" --cfg $((i % 16))) ;;
   gfinal) args=(gfinal --share "${SHARES[$((i / 40))]}" --fold $(((i / 10) % 4))

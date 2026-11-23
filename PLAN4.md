@@ -1,7 +1,8 @@
 # Plan, study 4 (DRAFT): gyros only in the physics loss
 
-Status: **draft for discussion.** Not reviewed, not frozen; no code or runs yet. Open decisions
-are marked **[decide]**. Studies 1–3 are not changed by this study.
+Status: **draft.** Not reviewed and not frozen. A feasibility pilot (below) runs first. Choices
+the user left to the recommendation are marked **[decided]**. Studies 1–3 are not changed by
+this study.
 
 ## Why this study
 
@@ -82,3 +83,36 @@ plus study 3's all-sensor models as a reference line.
 2. Include `distill`.
 3. Add the approximate hip term.
 4. Keep all four shares or drop 50% to save compute.
+
+## Feasibility pilot (before the plan is frozen)
+
+On 2026-11-23 the user asked to run study 4 with a minimal training run first, to check that
+the study makes sense. The four open decisions were left to the recommendations:
+
+- **[decided]** EMG-only inputs as primary, EMG + accelerometers as secondary.
+- **[decided]** No hip term.
+- **[decided]** All four shares kept.
+- **[decided]** `distill` decided after the pilot.
+
+The pilot (20 runs, `gaps.PILOT4`, kind `g4pilot`):
+- **Scope:** fold 0 only, seed and mask draw 100, scored on fold 0's validation people.
+- **Network:** lr 3e-3, width 128, no swing term.
+- **EMG only,** at 0%, 90% and 99% missing:
+  - `base` with weight decay 0 and 1e-4;
+  - `pinn` with λ 0.01, 0.1, 1 and 10.
+- **EMG + accelerometers,** at 99% missing: `base`, and `pinn` with λ 1.
+
+**What would make the study worth running:**
+1. At 90–99% missing, EMG-only `base` is clearly worse than study 3's all-sensor `base` (fold 0
+   tuning runs with the same lr and width). Otherwise the gyros carry nothing the network
+   lacks.
+2. At 90–99%, some λ gives `pinn` a lower validation score than `base`. Otherwise the gyro
+   term does not transfer that information.
+
+**If both hold:**
+- the λ grid for the full study is set from the pilot;
+- the plan is frozen after an independent review;
+- fold 0's validation people are used again for fold 0's choices (declared here; no test
+  people are involved).
+
+**If either fails:** study 4 stops, and the pilot is reported as the result.

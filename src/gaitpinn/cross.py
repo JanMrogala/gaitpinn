@@ -156,18 +156,32 @@ class Unlabelled:
 # ---------- model ----------
 
 
+def input_channels(name: str) -> list[int]:
+    """Columns of x the network sees. 'all' (studies 1-3), 'emg', or 'emg_acc' (study 4: the
+    gyros are left out and used only in the physics loss)."""
+    emg = list(range(len(data.EMG)))
+    acc = [len(data.EMG) + i for i, c in enumerate(data.IMU) if "_Accel_" in c]
+    return {"all": list(range(N_IN)), "emg": emg, "emg_acc": emg + acc}[name]
+
+
 class XModel(torch.nn.Module):
     """Network on per-person normalized inputs; one global target normalization."""
 
     def __init__(self, cfg: dict, y_mean, y_std):
         super().__init__()
-        n_out = 4 if cfg["model"].startswith("pinn") else 3
-        self.net = Net(N_IN, n_out, cfg["width"], cfg["levels"], cfg["kernel"], cfg["dropout"])
+        n_out = 4 if cfg["model"].startswith("pinn") and cfg.get("swing", True) else 3
+        inputs = cfg.get("inputs", "all")
+        n_in = len(input_channels(inputs))
+        self.net = Net(n_in, n_out, cfg["width"], cfg["levels"], cfg["kernel"], cfg["dropout"])
         f = lambda a: torch.tensor(np.asarray(a), dtype=torch.float32)[None, :, None]  # noqa: E731
         self.register_buffer("y_mean", f(y_mean))
         self.register_buffer("y_std", f(y_std))
+        idx = torch.tensor(input_channels(inputs)) if inputs != "all" else None
+        self.register_buffer("in_idx", idx)  # None keeps studies 1-3 unchanged
 
     def forward(self, xn: torch.Tensor):
+        if self.in_idx is not None:
+            xn = xn[:, self.in_idx]
         out = self.net(xn)
         tau_n = out[:, 3] if out.shape[1] > 3 else None
         return out[:, :3] * self.y_std + self.y_mean, tau_n, out[:, :3]
