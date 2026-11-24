@@ -402,13 +402,17 @@ document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
     return body, True
 
 
+def _p(v: float) -> str:
+    return "< 0.001" if v < 0.001 else f"= {v:.3f}"
+
+
 def _test_line(label: str, w: dict, n: dict, a: str = "base", b: str = "pinn") -> str:
     v = w.get("verdict")
     head = f"<b>{html.escape(label)}:</b> " + (f"{html.escape(v)} " if v else "")
-    holm = f", Holm-adjusted p = {w['p_holm']:.3f}" if "p_holm" in w else ""
+    holm = f", Holm-adjusted p {_p(w['p_holm'])}" if "p_holm" in w else ""
     return (
         f"<li>{head}(mean error on stairs {a} {n[a]['error_after_switch_mean3']:.2f}° vs {b} "
-        f"{n[b]['error_after_switch_mean3']:.2f}°; Wilcoxon p = {w['p']:.3f}{holm}, "
+        f"{n[b]['error_after_switch_mean3']:.2f}°; Wilcoxon p {_p(w['p'])}{holm}, "
         f"r = {w['rank_biserial_r']:+.2f}, Hodges–Lehmann ({a} − {b}) {w['hodges_lehmann']:+.2f}° "
         f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}{nz_note(w)}).</li>"
     )
@@ -524,6 +528,9 @@ def study3_body(runs_dir: Path) -> tuple[str, bool]:
 <div class=note><b>Pre-registered tests</b> (base vs pinn per share, paired across people,
 Holm-corrected over 50%, 90%, 99%; smallest effect of interest ±0.5°):<ul>{lines}</ul></div>
 <div data-fig="error_vs_share" style="height:480px"></div>
+<p>Error bars: 95% interval of the mean across people. They overlap because people differ a
+lot from each other; the tests compare the two models within each person (paired), which is
+why small differences can still be clear.</p>
 <h2>Numbers (mean over people)</h2>
 <div class=wrap><table><thead><tr><th>missing</th><th>base</th><th>pinn</th><th>pinn_lab</th>
 <th>base walking</th><th>pinn walking</th><th>per-fold median base − pinn (folds 0–3)</th></tr>

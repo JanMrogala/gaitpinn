@@ -137,3 +137,46 @@ calibration diagnostic.
   score by up to 0.54°, and the 5 final seeds spread by 0.3–0.8°. The per-fold choices of lr,
   width and weight decay are therefore partly noise. The λ ordering was the same in all four
   folds. The final numbers average 5 seeds.
+
+## Study 3: gaps in the true angles
+
+Plan: `PLAN3.md`. As in study 2, but a share of the training and validation people's true
+angles is removed in random 2 s blocks, while their sensors stay complete. `base` learns only
+from the remaining angles. `pinn` also applies its physics loss to the stretches without angles.
+Every person keeps a fully labelled 30 s calibration trial; test people are untouched.
+
+**`base` is better at every share**, and the gap grows with the share (error after switch, mean
+of hip, knee and ankle, n = 22, Wilcoxon, Holm-corrected over 50%, 90% and 99%):
+
+| Missing | `base` | `pinn` | Holm p | Hodges–Lehmann `base − pinn` (95% CI) | Verdict |
+|---|---|---|---|---|---|
+| 0% (reference) | 7.53° | 7.69° | – (p = 0.70) | −0.05° (−0.42 to +0.13) | – |
+| 50% | 7.60° | 7.80° | 0.030 | −0.15° (−0.34 to −0.03) | `base` better |
+| 90% | 7.68° | 7.89° | 0.004 | −0.21° (−0.34 to −0.09) | `base` better |
+| 99% | 8.27° | 8.81° | < 0.001 | −0.49° (−0.74 to −0.31) | `base` better |
+
+- **Size:** the differences are small, below the pre-registered 0.5° smallest effect of
+  interest except at 99%, where they reach it. Most of the 99% difference is at the knee
+  (8.98° vs 10.21°).
+- **Unlabelled stretches:** `pinn_lab` (physics only on chunks with angles) is no different from
+  `pinn` at any share (p ≥ 0.52), so the physics loss on the stretches without angles neither
+  helped nor hurt.
+- **Trend:** the Page test for a `pinn` advantage that grows with the share is not significant
+  (p = 0.91); the difference runs the other way.
+- **Label efficiency:** `base` loses only 0.7° on stairs going from all angles to 99% missing
+  (about 1 minute of angles per training person, half of it the calibration trial).
+- **Tuning:** validation chose the smallest physics weight (λ = 0.001) in 15 of 16 share × fold
+  cells.
+- **The 16 people who passed study 1's gyro check:** same direction (p = 0.08, 0.03 and
+  < 0.001 at 50%, 90% and 99%).
+
+**Why:** the network already sees the gyros as inputs, so the gyro term adds no information,
+and the swing pendulum is a poor model of real knee swing. Study 4 removes the gyros from the
+inputs to test this.
+
+Every number comes from `runs/summary/results3.json` (`gaitpinn.test gsummary`), built from the
+1210 final records `gfinal-<model>-s<share>-<person>-s<seed>-j<job>_<task>` (arrays 23965276
+and 23967891).
+
+**Limitations:** gaps hit all modes equally (real occlusion is worse on stairs); people in a
+fold share trained models; GPU runs are not bit-reproducible.

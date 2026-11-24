@@ -224,3 +224,10 @@ with ±1e6. A short CPU run must then give exactly the same:
   - **`base` weight decay:** varies; 1e-3 (the new top value) won at 90% fold 3 and at 99%
     folds 0 and 1.
   - Ledger after tuning: 33.1 GPU-hours in total for the project.
+- **2026-11-24, final runs done (arrays 23965276 and 23967891, 1210 records).** Result:
+  `base` is better than `pinn` at 50%, 90% and 99% missing (Holm p 0.030, 0.004 and
+  < 0.001; Hodges–Lehmann −0.15°, −0.21° and −0.49°). `pinn_lab` equals `pinn`, and the Page
+  trend test p = 0.91 (README, website).
+  - Display changes after the result, with no effect on any number: p below 0.001 is shown as
+    "< 0.001", and the figure notes that error bars show spread across people while the tests
+    are paired.
