@@ -198,3 +198,27 @@ people were involved in the pilot.
     prefix; the lost-angle test also runs the study-4 `pinn` setup. The study-4 analysis
     (`gsummary` with a prefix, `distill` and headroom) is committed before any final run
     is scored.
+- **2026-11-24, tuning done (1024 runs, all completed: arrays 24003443, 24005578, 24006043,
+  24006413, 24006948 and 24007657). Choices frozen in `runs/chosen_g4.json` and
+  `runs/chosen_g4a.json` before any final run.**
+  - The first array ran at commit 822c33c and the others at 4929d87. The two commits differ
+    only in the analysis, plots and website, not in training.
+  - **λ:**
+    - EMG only: 0.01 (the smallest, "validation preferred almost no physics") won at 0%
+      folds 0 and 2. Elsewhere 0.1–1 won, and 1 (the top value) won at 0% fold 1, 50% fold 3
+      and 90% fold 1.
+    - EMG + accelerometers: 0.01 won at 90% fold 2 and 99% folds 2 and 3. 1 won at 50% fold 1.
+  - **Best validation score, `base` − `pinn` (°, folds 0–3):**
+
+    | Missing | EMG only | EMG + accelerometers |
+    |---|---|---|
+    | 0% | −0.02, +0.07, +0.04, +0.22 | +0.07, −0.03, +0.05, +0.36 |
+    | 50% | +0.18, +0.17, +0.05, +0.26 | +0.13, +0.22, −0.17, +0.09 |
+    | 90% | −0.03, +0.10, −0.10, +0.18 | −0.00, +0.21, −0.03, −0.03 |
+    | 99% | +0.48, +0.03, +0.51, +0.25 | +0.41, +0.24, +0.13, +0.35 |
+
+    These are the best of 16 configurations per model at one seed, on validation people. They
+    are not the test.
+  - **GPU-hours:** 27.9 for tuning; ledger 68.7 for the whole project.
+  - **Finals submitted with lower time limits** (30 min per final run, 1 h per `distill` run
+    with its teacher; the longest tuning run took 7.5 min). Worst case about 110 GPU-hours.
