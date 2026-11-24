@@ -1,118 +1,153 @@
-# Plan, study 4 (DRAFT): gyros only in the physics loss
+# Plan, study 4: gyros only in the physics loss
 
-Status: **draft.** Not reviewed and not frozen. A feasibility pilot (below) runs first. Choices
-the user left to the recommendation are marked **[decided]**. Studies 1–3 are not changed by
-this study.
+Written before any study-4 tuning or final run, after a small feasibility pilot (below).
+Changes made after results have been seen are logged at the bottom with the reason. Studies 1–3
+are not changed by this study.
 
 ## Why this study
 
-In studies 1–3, the physics loss added little that the network could not already get:
+In studies 1–3, the physics loss added nothing the network could not already get:
 
 - **The gyro term** asks that d(angle)/dt match the gyro difference across the joint. The
   gyros were also network inputs, so the network could learn that relation from a few labelled
-  seconds, and the term added no new information.
-- **The swing term** uses a pendulum model that explains real knee swing poorly (study 1: even
-  the true angles leave a residual of about 2.6× the signal).
+  seconds.
+- **The swing term** uses a pendulum model that explains real knee swing poorly.
+- **Study 3** found `base` better than `pinn` at every share of missing angles.
 
-A physics loss can only help when it carries information the inputs and the remaining labels
-do not.
+A physics loss can only help when it carries information that neither the inputs nor the
+remaining labels contain.
 
 **Idea:** the network does not see the gyros. They are used only inside the physics loss,
 during training. This matches a real use:
 - train in a lab where IMUs, and sometimes motion capture, are available;
 - deploy a cheaper device without gyros.
 
+The gyro term can only add information where true angles are missing, so the study keeps
+study 3's missing-angle shares.
+
 ## Question
 
-With the gyros removed from the network's inputs, and with a share of the training angles
-missing (study 3's gaps), does a network trained with the gyro physics term keep a lower stair
-error on new people than the same network trained on the remaining angles only?
-
-The gyro term only adds information where true angles are missing: where angles exist, they
-already contain d(angle)/dt. So the study keeps study 3's missing-angle shares. The effect is
-expected to grow with the share.
+With the gyros removed from the network's inputs, does a network trained with the gyro physics
+term keep a lower stair error on new people than the same network trained on the remaining
+angles only, as more of the training angles are missing?
 
 ## Models
 
 | Name | Network inputs | Training |
 |---|---|---|
-| `base` | inputs without gyros (below) | remaining true angles only |
-| `pinn` | same | remaining angles + gyro term on all data (labelled and unlabelled batches) |
-| `distill` (secondary) **[decide]** | same | remaining angles + pseudo-angles from a teacher. The teacher is study 3's all-sensor `base` at the same share, applied to the stretches without angles. It is a non-physics way to use the gyros, and the fair competitor for `pinn`. |
-| reference (not tested) | all 35 channels | study 3's `base` and `pinn` at the same share: what the gyros give as inputs |
+| `base` | no gyros (input set below) | remaining true angles only |
+| `pinn` | same | remaining angles + gyro term on all data (labelled and unlabelled batches); no swing term |
+| `distill` (secondary) | same | remaining angles + a teacher's predictions in place of the lost angles. The teacher is study 3's all-sensor `base` configuration for that share and fold, retrained in the same task with the same seed and mask. It is a non-physics way to use the gyros, and the fair competitor for `pinn`. Not tuned: it uses `base`'s choice. |
+| reference (not tested) | all 35 channels | study 3's `base` at the same share |
 
-**Network inputs [decide], one primary set:**
-- **A, EMG + accelerometers (23 channels):** an IMU without gyro. Accelerometers still show
-  segment tilt, so the gyro adds partly redundant information.
-- **B, EMG only (11 channels):** the largest gap between what the network sees and what the
-  physics knows. Errors will be much larger for both models.
-- Recommendation: B as primary (the cleanest test of "physics carries privileged
-  information"), A as secondary.
+**Input sets:** two, each run as a full study with its own tuning, choices and tests.
+- **Primary, EMG only (11 channels), prefix `g4`.**
+- **Secondary, EMG + accelerometers (23 channels), prefix `g4a`.** An IMU without gyro;
+  accelerometers still show segment tilt.
 
-**Physics term:**
-- Only the gyro term for knee and ankle, with study 3's calibration-trial alignment. The swing
-  term is dropped.
-- **[decide]** Add a hip term: thigh gyro − trunk gyro, as an approximation. There is no pelvis
-  IMU, and the trunk differs from the pelvis by the lumbar angle.
+**Physics term:** the gyro term for knee and ankle only, with study 3's calibration-trial
+alignment and physics people. No hip term, no swing term, no torque output.
 
 ## Setup (from study 3, unchanged unless stated)
 
 - Same data, people, folds and test stream.
-- Missing shares 0%, 50%, 90%, 99%, with the same masks and draws, and the 30 s calibration
-  trial.
-- Same sampler, separate random streams, validation score, no-leak test, tuning grids
-  (16 configurations each), smallest effect of interest (0.5°), tests (Holm over 50%, 90%,
-  99%) and verdict rules.
-- **Input normalization:** over the chosen input channels only.
-- **Test people's gyros:** never used, not even for normalization.
+- Shares 0%, 50%, 90% and 99%, with the same masks, draws and 30 s calibration trial.
+- Same sampler, separate random streams, validation score, no-leak tests (now also covering
+  `distill`), smallest effect of interest (0.5°), tests and verdict rules.
+- **Inputs:** the network takes the chosen channels only. Normalization statistics are per
+  channel, so the unused channels' statistics are computed but never reach the network.
+  - A test checks that the network's output does not change when the gyro channels change.
+- **`distill` targets:** where an angle is kept, the true angle; where it is lost, the
+  teacher's prediction. Chunks are drawn from all samples, and the target normalization uses
+  the kept angles only.
 
-## Primary result
+## Tuning (same effort for `base` and `pinn`)
 
-Error on stairs against the share of missing angles, with `base` and `pinn` (input set B),
-plus study 3's all-sensor models as a reference line.
+- Per input set, share and fold: 16 configurations per model at seed 100.
+  - Shared: lr {1e-3, 3e-3} × width {64, 128}.
+  - `base` adds weight decay {0, 1e-5, 1e-4, 1e-3}.
+  - `pinn` adds λ {0.01, 0.1, 0.3, 1}.
+- **λ grid from the pilot:** λ = 10 was worse everywhere, and 0.01–1 covered the best values.
+- **Choice:** the lowest validation score per share and fold.
 
-## Compute (estimate)
+## Final runs, metrics and tests
 
-- **Tuning:** 4 shares × 4 folds × 2 models × 16 configurations = 512 runs.
-- **Finals:** 160 runs, plus `distill` 60 and set A 160 if chosen.
-- **Estimate:** about 40–60 GPU-hours, similar to study 3.
+- **Final runs:** per input set, share, fold and model, the chosen configuration with seeds
+  0–4 (= mask draws). `distill`: EMG-only set, shares 50%, 90% and 99%.
+- **Primary endpoint:** error after switch to stairs, mean of hip, knee and ankle.
+- **Primary tests:** EMG-only set, `base − pinn`, one per share (50%, 90%, 99%).
+  - Wilcoxon signed-rank paired over the 22 people, Holm-corrected over the three.
+  - Verdicts as in study 3: "better" needs Holm p < 0.05 and fold agreement; "equivalent"
+    means the Hodges–Lehmann CI lies within ±0.5°; otherwise "inconclusive".
+- **Secondary:**
+  - the same tests for the EMG + accelerometers set;
+  - `pinn` vs `distill`;
+  - the 0% share;
+  - walking error, per joint, climbing up and down;
+  - the 16 people who passed study 1's gyro check;
+  - the Page trend test over 50%, 90% and 99% (does the `base − pinn` difference grow with
+    the share?).
 
-## Open decisions
+## Compute
 
-1. Primary input set: B (EMG only) or A (EMG + accelerometers).
-2. Include `distill`.
-3. Add the approximate hip term.
-4. Keep all four shares or drop 50% to save compute.
+- **Tuning:** 2 input sets × 512 = 1024 runs.
+- **Finals:** 2 × 160 + 60 `distill` = 380 runs.
+- **Estimate:**
+  - EMG-only runs took 1–4 min of training in the pilot, so about 35 GPU-hours for tuning
+    and about 25 for the finals.
+  - Ledger before study 4: 40.8 GPU-hours for the whole project.
+- **Queue:** submitted in chunks of at most 200 tasks (LUMI's limit is about 210 per user).
 
-## Feasibility pilot (before the plan is frozen)
+## Feasibility pilot (2026-11-23, before this plan was frozen)
 
-On 2026-11-23 the user asked to run study 4 with a minimal training run first, to check that
-the study makes sense. The four open decisions were left to the recommendations:
+The user asked to run study 4 with a minimal training run first, to check that it makes sense.
+The open decisions were left to the recommendations:
+- EMG only as primary, EMG + accelerometers as secondary;
+- no hip term;
+- all four shares;
+- `distill` decided after the pilot, and now included.
 
-- **[decided]** EMG-only inputs as primary, EMG + accelerometers as secondary.
-- **[decided]** No hip term.
-- **[decided]** All four shares kept.
-- **[decided]** `distill` decided after the pilot.
+**Pilot design:** 20 runs (`gaps.PILOT4`, kind `g4pilot`, array 23968063).
+- fold 0, seed and draw 100, lr 3e-3, width 128;
+- scored on fold 0's validation people only; no test people involved.
 
-The pilot (20 runs, `gaps.PILOT4`, kind `g4pilot`):
-- **Scope:** fold 0 only, seed and mask draw 100, scored on fold 0's validation people.
-- **Network:** lr 3e-3, width 128, no swing term.
-- **EMG only,** at 0%, 90% and 99% missing:
-  - `base` with weight decay 0 and 1e-4;
-  - `pinn` with λ 0.01, 0.1, 1 and 10.
-- **EMG + accelerometers,** at 99% missing: `base`, and `pinn` with λ 1.
+**Conditions written before the pilot, and results** (validation RMSE, °):
 
-**What would make the study worth running:**
-1. At 90–99% missing, EMG-only `base` is clearly worse than study 3's all-sensor `base` (fold 0
-   tuning runs with the same lr and width). Otherwise the gyros carry nothing the network
-   lacks.
-2. At 90–99%, some λ gives `pinn` a lower validation score than `base`. Otherwise the gyro
-   term does not transfer that information.
+| | 0% | 90% | 99% |
+|---|---|---|---|
+| all-sensor `base` (study 3 tuning, same lr and width) | 6.24 | 6.63 | 6.13 |
+| EMG-only `base`, wd 0 / 1e-4 | 8.06 / 7.99 | 8.29 / 8.31 | 8.32 / 8.31 |
+| EMG-only `pinn`, λ 0.01 / 0.1 / 1 / 10 | 8.05 / 8.10 / 8.10 / 8.89 | 8.20 / 8.21 / 8.55 / 9.38 | 8.08 / 7.97 / 7.97 / 8.31 |
+| EMG + accelerometers at 99%: `base` / `pinn` (λ 1) | | | 6.46 / 6.17 |
 
-**If both hold:**
-- the λ grid for the full study is set from the pilot;
-- the plan is frozen after an independent review;
-- fold 0's validation people are used again for fold 0's choices (declared here; no test
-  people are involved).
+1. **EMG-only `base` is clearly worse than the all-sensor `base`** (by about 1.7–2.2°), so
+   the gyros carry information the EMG-only network lacks. **Met.**
+2. **Some λ gives `pinn` a lower validation score than `base` at 90–99%:**
+   - 90%: by 0.09°;
+   - 99%: by 0.34°, with two λ values agreeing;
+   - EMG + accelerometers at 99%: by 0.29°.
+   **Met.**
 
-**If either fails:** study 4 stops, and the pilot is reported as the result.
+**Caveats:**
+- The pilot is one fold and one seed, and GPU run-to-run noise reached 0.5° in study 2.
+- It tried four λ values against two weight decays, which favours `pinn` slightly.
+- Only the full study can confirm the effect.
+
+Fold 0's validation people are used again for fold 0's choices in the full study; no test
+people were involved in the pilot.
+
+## Decisions log
+
+- **2026-11-23, study 4 drafted** after study 3's tuning showed validation preferring almost
+  no physics.
+- **2026-11-24, feasibility pilot passed** (above).
+  - Plan completed:
+    - λ grid {0.01, 0.1, 0.3, 1};
+    - both input sets with full tuning;
+    - `distill` included.
+  - Code:
+    - input-channel choice and swing switch (`cross.XModel`);
+    - per-study prefixes for configs, record kinds and choices;
+    - `distill` through teacher fill-ins (`GapPerson.fill`);
+    - tests that the gyros never reach the network and that lost angles never change
+      `pinn` or `distill` training.

@@ -104,6 +104,7 @@ class GapPerson:
         for k, s, e in self.trial:
             self.keep[k][s:e] = True
         self._cache, self._val = {}, None
+        self.fill = None  # study 4 `distill`: teacher predictions for the lost angles
         self.gyro_ok, self.setup_info = False, None
         if setup:
             self._setup()
@@ -122,6 +123,11 @@ class GapPerson:
 
     def norm(self, x: np.ndarray) -> np.ndarray:
         return ((x - self.x_mean) / self.x_std).astype(np.float32)
+
+    def loss_keep(self, k: str) -> np.ndarray:
+        """Samples with a training target: kept angles, or every sample once a teacher fills
+        the lost ones (`distill`)."""
+        return self.keep[k] if self.fill is None else np.ones_like(self.keep[k])
 
     def mask_hash(self) -> str:
         bits = np.concatenate([self.keep[k] for k in self.all_ids()])
@@ -186,7 +192,10 @@ class GapPerson:
         """Sensors, physics inputs, and the angles with gaps (NaN) for one file."""
         if k not in self._cache:
             x = self.x(k)
-            e = {"x": self.norm(x), "y": self.y(k).astype(np.float32), "keep": self.keep[k]}
+            y = self.y(k)
+            if self.fill is not None:  # lost angles -> teacher predictions (never true angles)
+                y = np.where(self.keep[k][:, None], y, self.fill[k])
+            e = {"x": self.norm(x), "y": y.astype(np.float32), "keep": self.loss_keep(k)}
             if self.gyro_ok:
                 e |= {
                     "ref": gyro.reference(x, self.align).astype(np.float32),
@@ -236,7 +245,7 @@ class Sampler:
         P, F, idx = [], [], []
         for pi, p in enumerate(people):
             for fi, k in enumerate(self.files[pi]):
-                ii = np.flatnonzero(p.keep[k])
+                ii = np.flatnonzero(p.loss_keep(k))
                 ii = ii[ii >= SKIP]
                 P.append(np.full(len(ii), pi, np.int32))
                 F.append(np.full(len(ii), fi, np.int32))
@@ -500,9 +509,10 @@ def masks_summary(h5: Path, people: list[str], fl: list[dict]) -> dict:
     return out
 
 
-def gselect(runs_dir: Path) -> dict:
-    """Per share and fold: the configuration with the lowest validation score (nested)."""
-    recs = [r for r in runs.load_runs(runs_dir) if r.get("kind") == "gtune"]
+def gselect(runs_dir: Path, prefix: str = "g") -> dict:
+    """Per share and fold: the configuration with the lowest validation score (nested).
+    prefix: g (study 3), g4 (study 4, EMG only), g4a (study 4, EMG + accelerometers)."""
+    recs = [r for r in runs.load_runs(runs_dir) if r.get("kind") == f"{prefix}tune"]
     recs = [r for r in recs if r.get("status") == "done"]
     out, n = {}, {}
     keys = ["lr", "width", "weight_decay", "lam"]
@@ -520,7 +530,7 @@ def gselect(runs_dir: Path) -> dict:
     for key, v in out.items():
         if not {"base", "pinn"} <= set(v):
             raise SystemExit(f"{key}: missing tuning result")
-    (runs_dir / "chosen_g.json").write_text(json.dumps(out, indent=2))
+    (runs_dir / f"chosen_{prefix}.json").write_text(json.dumps(out, indent=2))
     return out
 
 
@@ -548,11 +558,13 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("kind", choices=["gmasks", "gtune", "gfinal", "gselect", "g4pilot"])
     ap.add_argument("--index", type=int, help="g4pilot: entry of PILOT4")
+    ap.add_argument("--prefix", default="g", help="configs/<prefix><model>.yaml, record kinds")
+    ap.add_argument("--teacher-chosen", type=Path, help="distill: study 3 choices (all sensors)")
     ap.add_argument("--h5", type=Path)
     ap.add_argument("--runs", type=Path, required=True)
     ap.add_argument("--share", type=float)
     ap.add_argument("--fold", type=int)
-    ap.add_argument("--model", choices=["base", "pinn", "pinn_lab"])
+    ap.add_argument("--model", choices=["base", "pinn", "pinn_lab", "distill"])
     ap.add_argument("--cfg", type=int, help="gtune: grid index")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--chosen", type=Path)
@@ -562,7 +574,7 @@ def main() -> None:
     ap.add_argument("--n-val", type=int, default=cross.N_VAL)
     a = ap.parse_args()
     if a.kind == "gselect":
-        for k, v in sorted(gselect(a.runs).items()):
+        for k, v in sorted(gselect(a.runs, a.prefix).items()):
             print(k, {m: v[m] for m in ("base", "pinn")})
         return
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -602,12 +614,13 @@ def main() -> None:
         runs.write_run(a.runs, rec)
         return
     if a.kind == "gtune":
-        if a.model == "pinn_lab":
-            raise SystemExit("pinn_lab is not tuned")
-        c = cross.grid(yaml.safe_load((cdir / f"g{a.model}.yaml").read_text()))[a.cfg]
+        if a.model in ("pinn_lab", "distill"):
+            raise SystemExit(f"{a.model} is not tuned")
+        c = cross.grid(yaml.safe_load((cdir / f"{a.prefix}{a.model}.yaml").read_text()))[a.cfg]
         c = c | {"tag": f"c{a.cfg:02d}"} | mx
         name = f"{a.model}-{share_tag(a.share)}-c{a.cfg:02d}"
-        rec = cross.record("gtune", name, f"fold{a.fold}", seed, a.code, extra | {"config": c})
+        kind = f"{a.prefix}tune"
+        rec = cross.record(kind, name, f"fold{a.fold}", seed, a.code, extra | {"config": c})
         runs.write_run(a.runs, rec)
         _, out = fit(c, train_p, val_p, seed, dev)
         rec |= {"metrics": {"val_rmse": out["val_rmse"]}, "training": out, "status": "done"}
@@ -615,14 +628,29 @@ def main() -> None:
         return
     # gfinal
     chosen = json.loads(a.chosen.read_text())[f"{share_tag(a.share)}/fold{a.fold}"]
-    src = "pinn" if a.model == "pinn_lab" else a.model
-    base_cfg = yaml.safe_load((cdir / f"g{src}.yaml").read_text())
+    src = {"pinn_lab": "pinn", "distill": "base"}.get(a.model, a.model)
+    base_cfg = yaml.safe_load((cdir / f"{a.prefix}{src}.yaml").read_text())
     c = {k: v for k, v in base_cfg.items() if k != "grid"} | chosen[src] | mx
+    if a.model == "distill":  # teacher: study 3's all-sensor base, same share, fold and mask
+        tch = json.loads(a.teacher_chosen.read_text())[f"{share_tag(a.share)}/fold{a.fold}"]
+        tbase = yaml.safe_load((cdir / "gbase.yaml").read_text())
+        tc = {k: v for k, v in tbase.items() if k != "grid"} | tch["base"] | mx
+        teacher, tout = fit(tc, train_p, val_p, seed, dev)
+        for p in train_p:
+            p.fill = {k: cross.predict(teacher, p.norm(p.x(k)), dev) for k in p.all_ids()}
+            p._cache = {}
+        extra |= {"teacher": {"config": tc, "val_rmse": tout["val_rmse"]}}
+        del teacher
     model, out = fit(c, train_p, val_p, seed, dev, unlabelled=a.model != "pinn_lab")
     for name in f["test"]:
         tp = cross.Unlabelled(a.h5 / f"{name}.h5")
         rec = cross.record(
-            "gfinal", f"{a.model}-{share_tag(a.share)}", name, seed, a.code, extra | {"config": c}
+            f"{a.prefix}final",
+            f"{a.model}-{share_tag(a.share)}",
+            name,
+            seed,
+            a.code,
+            extra | {"config": c},
         )
         rec["model"] = a.model
         d = runs.write_run(a.runs, rec)

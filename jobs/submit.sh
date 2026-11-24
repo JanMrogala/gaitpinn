@@ -20,15 +20,20 @@ case "$what" in
     part=small-g; time="${GP_TIME:-04:00:00}"
     script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"  # GP_ARRAY: e.g. a pilot subset
     args=""; extra=",GP_KIND=$what" ;;
-  gmasks|gtune|gfinal|glab|g4pilot)  # study 3 (PLAN3.md); study 4 pilot (PLAN4.md)
-    case "$what" in gmasks) n=1 ;; gtune) n=512 ;; gfinal) n=160 ;; glab) n=60 ;; g4pilot) n=20 ;; esac
-    if [ "$what" = gfinal ] || [ "$what" = glab ]; then
-      test -f "$RUNS_LOCAL/chosen_g.json" || { echo "run: python -m gaitpinn.gaps gselect" >&2; exit 1; }
-      rsync -a "$RUNS_LOCAL/chosen_g.json" "$LUMI_HOST:$SCR/"
+  gmasks|gtune|gfinal|glab|gdistill|g4pilot)  # studies 3 and 4 (PLAN3.md, PLAN4.md)
+    # GP_PREFIX: g (study 3, default), g4 (study 4, EMG only), g4a (study 4, EMG + acc)
+    P="${GP_PREFIX:-g}"
+    case "$what" in
+      gmasks) n=1 ;; gtune) n=512 ;; gfinal) n=160 ;; glab|gdistill) n=60 ;; g4pilot) n=20 ;;
+    esac
+    if [ "$what" = gfinal ] || [ "$what" = glab ] || [ "$what" = gdistill ]; then
+      test -f "$RUNS_LOCAL/chosen_$P.json" || { echo "run: gaitpinn.gaps gselect --prefix $P" >&2; exit 1; }
+      rsync -a "$RUNS_LOCAL/chosen_$P.json" "$LUMI_HOST:$SCR/"
+      [ "$what" = gdistill ] && rsync -a "$RUNS_LOCAL/chosen_g.json" "$LUMI_HOST:$SCR/"
     fi
     part=small-g; time="${GP_TIME:-02:00:00}"
     script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"
-    args=""; extra=",GP_KIND=$what" ;;
+    args=""; extra=",GP_KIND=$what,GP_PREFIX=$P" ;;
   final-strong)
     # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
     python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c['lam']=0.1; json.dump(c, open(sys.argv[2],'w'), indent=2)" \

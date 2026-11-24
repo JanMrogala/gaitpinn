@@ -1,0 +1,24 @@
+# Study 4 (PLAN4.md): `pinn`, inputs EMG only; gyros only in the gyro term (no swing term).
+model: pinn
+inputs: emg
+swing: false
+study: 4
+width: 64
+levels: 6
+kernel: 3
+dropout: 0.0
+lr: 1.0e-3
+weight_decay: 0.0
+batch_size: 64
+chunk_s: 4.0
+steps_per_epoch: 100
+max_epochs: 100
+patience: 8
+lam: 0.003
+# Starting values of the learned swing-term parameters (softplus inputs for w, k, b).
+swing_init: {w: 0.0, k: -2.0, b: -2.0, q0: 0.1}
+# Tuning grid (16 configurations, same count as base).
+grid:
+  lr: [1.0e-3, 3.0e-3]
+  width: [64, 128]
+  lam: [0.01, 0.1, 0.3, 1.0]

@@ -188,3 +188,32 @@ def test_study4_pinn_trains_with_gyro_term_only(people):
     _, out = gaps.fit(cfg, tr, va, 7, torch.device("cpu"))
     h = out["history"]
     assert all(e["gyro"] > 0 and e["swing"] == 0 for e in h)
+
+
+def _distill(h5dir, share):
+    from gaitpinn import cross
+
+    torch.set_num_threads(1)
+    dev = torch.device("cpu")
+    tr = [gaps.GapPerson(h5dir / f"{n}.h5", share, 7) for n in ("P1", "P2")]
+    va = [gaps.GapPerson(h5dir / "P3.h5", share, 7, setup=False)]
+    teacher, _ = gaps.fit(CFG | {"model": "base"}, tr, va, 7, dev)
+    for p in tr:
+        p.fill = {k: cross.predict(teacher, p.norm(p.x(k)), dev) for k in p.all_ids()}
+        p._cache = {}
+    net, out = gaps.fit(CFG | {"model": "base", "inputs": "emg"}, tr, va, 7, dev, trace=True)
+    return out, {k: v.clone() for k, v in net.state_dict().items()}, tr + va
+
+
+def test_distill_trains_on_every_sample_and_never_reads_lost_angles(people, tmp_path):
+    ref = _distill(people, 0.9)
+    tr = ref[2][:2]
+    assert all(p.loss_keep(k).all() and not p.keep[k].all() for p in tr for k in p.all_ids()[:1])
+    for how in ("random", "huge"):
+        d = tmp_path / how
+        _corrupt(people, d, ref[2], how)
+        got = _distill(d, 0.9)
+        for key in ("y_mean", "y_std", "steps", "history", "val_rmse"):
+            assert got[0][key] == ref[0][key], key
+        for k in ref[1]:
+            assert torch.equal(got[1][k], ref[1][k]), k

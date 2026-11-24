@@ -8,6 +8,8 @@
 #   gtune : i -> share i / 128, fold (i / 32) % 4, model (i / 16) % 2, cfg i % 16 (512 tasks)
 #   gfinal: i -> share i / 40, fold (i / 10) % 4, model (i / 5) % 2, seed i % 5   (160 tasks)
 #   glab  : i -> share 1 + i / 20, fold (i / 5) % 4, model pinn_lab, seed i % 5   (60 tasks)
+# Study 4 (PLAN4.md): the same gtune/gfinal with GP_PREFIX=g4 (EMG only) or g4a (EMG + acc);
+#   gdistill: i -> share 1 + i / 20, fold (i / 5) % 4, model distill, seed i % 5    (60 tasks)
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-node=1
@@ -26,17 +28,21 @@ MODELS=(base pinn)
 SHARES=(0.0 0.5 0.9 0.99)
 i=$SLURM_ARRAY_TASK_ID
 MODULE=gaitpinn.cross
+P="${GP_PREFIX:-g}"
 case "$GP_KIND" in g*) MODULE=gaitpinn.gaps ;; esac
 case "$GP_KIND" in
   gmasks) args=(gmasks) ;;
   g4pilot) args=(g4pilot --index "$i") ;;
   gtune)  args=(gtune --share "${SHARES[$((i / 128))]}" --fold $(((i / 32) % 4))
-                --model "${MODELS[$(((i / 16) % 2))]}" --cfg $((i % 16))) ;;
+                --model "${MODELS[$(((i / 16) % 2))]}" --cfg $((i % 16)) --prefix "$P") ;;
   gfinal) args=(gfinal --share "${SHARES[$((i / 40))]}" --fold $(((i / 10) % 4))
                 --model "${MODELS[$(((i / 5) % 2))]}" --seed $((i % 5))
-                --chosen "$GP_SCR/chosen_g.json") ;;
+                --chosen "$GP_SCR/chosen_$P.json" --prefix "$P") ;;
   glab)   args=(gfinal --share "${SHARES[$((1 + i / 20))]}" --fold $(((i / 5) % 4))
-                --model pinn_lab --seed $((i % 5)) --chosen "$GP_SCR/chosen_g.json") ;;
+                --model pinn_lab --seed $((i % 5)) --chosen "$GP_SCR/chosen_$P.json" --prefix "$P") ;;
+  gdistill) args=(gfinal --share "${SHARES[$((1 + i / 20))]}" --fold $(((i / 5) % 4))
+                --model distill --seed $((i % 5)) --chosen "$GP_SCR/chosen_$P.json" --prefix "$P"
+                --teacher-chosen "$GP_SCR/chosen_g.json") ;;
   xtune)  args=(xtune --fold $((i / 24)) --model "${MODELS[$(((i / 12) % 2))]}" --cfg $((i % 12))) ;;
   xcal)   args=(xcal --fold "$i" --chosen "$GP_SCR/chosen_x.json") ;;
   xfinal) args=(xfinal --fold $((i / 10)) --model "${MODELS[$(((i / 5) % 2))]}" --seed $((i % 5))
