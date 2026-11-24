@@ -403,13 +403,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("action", choices=["select", "summary", "xselect", "xsummary", "gsummary"])
     ap.add_argument("--runs", type=Path, required=True)
+    ap.add_argument("--prefix", default="g", help="gsummary: g (study 3), g4 or g4a (study 4)")
     a = ap.parse_args()
     if a.action == "xselect":
         for f, v in xselect(a.runs).items():
             print(f, {k: v[k] for k in v if not k.startswith("_")})
         return
     if a.action == "gsummary":
-        s = gsummary(a.runs)
+        s = gsummary(a.runs, prefix=a.prefix)
         for t, b in s["shares"].items():
             w = b["test"]
             print(
@@ -685,11 +686,12 @@ def gtag(share: float) -> str:
     return f"s{round(share * 100):02d}"
 
 
-def gverdict(w: dict, folds: dict) -> str:
-    """PLAN3.md: Holm p, direction, fold consistency, then equivalence or inconclusive."""
+def gverdict(w: dict, folds: dict, a: str = "base", b: str = "pinn") -> str:
+    """PLAN3.md: Holm p, direction, fold consistency, then equivalence or inconclusive.
+    w and folds are for the difference a - b (r > 0: b has the lower error)."""
     if w["p_holm"] < 0.05 and w["rank_biserial_r"] != 0:
-        win = "pinn" if w["rank_biserial_r"] > 0 else "base"
-        agree = sum((v > 0) == (win == "pinn") and v != 0 for v in folds.values())
+        win = b if w["rank_biserial_r"] > 0 else a
+        agree = sum((v > 0) == (win == b) and v != 0 for v in folds.values())
         return f"{win} is better" + ("" if agree >= 3 else " (pooled only)")
     lo, hi = w["hl_ci95"]
     if -SESOI < lo and hi < SESOI:
@@ -697,14 +699,19 @@ def gverdict(w: dict, folds: dict) -> str:
     return "inconclusive"
 
 
-def gsummary(runs_dir: Path, require: int = 22) -> dict:
-    """Final study-3 runs -> summary/results3.json (one study-2-shaped block per share)."""
+def gsummary(runs_dir: Path, require: int = 22, prefix: str = "g") -> dict:
+    """Final study-3 (prefix g) or study-4 (g4, g4a) runs -> summary/results3.json or
+    summary/results_<prefix>.json, one study-2-shaped block per share.
+    Study 3 (PLAN3.md): primary base vs pinn at 50/90/99%, Holm over the three.
+    Study 4 (PLAN4.md): primary at 99% only; 50/90% a secondary Holm family of two; pinn vs
+    distill per share its own Holm family; headroom base@share - base@0%."""
     from scipy import stats
 
     from gaitpinn import runs as runrec
 
     recs = runrec.load_runs(runs_dir)
-    final = [r for r in recs if r.get("kind") == "gfinal" and r.get("status") == "done"]
+    final = [r for r in recs if r.get("kind") == f"{prefix}final" and r.get("status") == "done"]
+    study4 = prefix != "g"
     fold_of = {r["person"]: r["fold"]["fold"] for r in final}
     gyro_ok = []
     checks = runs_dir / "checks" / "checks.jsonl"
@@ -715,13 +722,21 @@ def gsummary(runs_dir: Path, require: int = 22) -> dict:
         }
         gyro_ok = sorted(p for p in fold_of if ok.get(p))
     keys = ["error_after_switch", "walk_error", "error_ascent", "error_descent"]
-    out = {"study": 3, "shares": {}, "folds": fold_of, "gyro_check_people": gyro_ok}
+    out = {
+        "study": 4 if study4 else 3,
+        "prefix": prefix,
+        "shares": {},
+        "folds": fold_of,
+        "gyro_check_people": gyro_ok,
+    }
     per_all = {}
     for share in GSHARES:
         rs = [r for r in final if r["share"] == share]
         if not rs:
             continue
-        models = [m for m in ("base", "pinn", "pinn_lab") if any(r["model"] == m for r in rs)]
+        models = [
+            m for m in ("base", "pinn", "pinn_lab", "distill") if any(r["model"] == m for r in rs)
+        ]
         people = sorted({r["person"] for r in rs})
         by = {
             (m, p): [r for r in rs if r["model"] == m and r["person"] == p]
@@ -771,7 +786,9 @@ def gsummary(runs_dir: Path, require: int = 22) -> dict:
         main = wilcoxon(vec("base", "error_after_switch"), vec("pinn", "error_after_switch"))
         main["per_fold_median"] = fold_medians("base", "pinn")
         sec = {}
-        for a, b in [("base", "pinn"), ("pinn_lab", "pinn"), ("base", "pinn_lab")]:
+        pairs = [("base", "pinn"), ("pinn_lab", "pinn"), ("base", "pinn_lab")]
+        pairs += [("distill", "pinn"), ("base", "distill")]
+        for a, b in pairs:
             if a not in models or b not in models:
                 continue
             if (a, b) != ("base", "pinn"):
@@ -815,12 +832,62 @@ def gsummary(runs_dir: Path, require: int = 22) -> dict:
                 m: {str(fold_of[p]): by[(m, p)][0]["config"] for p in complete} for m in models
             },
         }
-    prim = [gtag(s) for s in GPRIMARY if gtag(s) in out["shares"]]
-    if prim:
-        ws = [out["shares"][t]["test"] for t in prim]
+    families = [[0.99], [0.5, 0.9]] if study4 else [GPRIMARY]
+    for fam in families:
+        ws = [out["shares"][gtag(s)]["test"] for s in fam if gtag(s) in out["shares"]]
         for w, padj in zip(ws, holm([w["p"] for w in ws]), strict=True):
             w["p_holm"] = padj
             w["verdict"] = gverdict(w, w["per_fold_median"])
+            w["family"] = "primary" if fam in ([0.99], GPRIMARY) else "secondary"
+    dw = [
+        b["secondary"]["distill vs pinn/primary"]
+        for b in out["shares"].values()
+        if "distill vs pinn/primary" in b["secondary"]
+    ]
+    for w, padj in zip(dw, holm([w["p"] for w in dw]), strict=True):
+        w["p_holm"] = padj
+        w["verdict"] = gverdict(w, w["per_fold_median"], "distill", "pinn")
+    if study4 and 0.0 in per_all:  # headroom: base@share - base@0%, per person
+        rng = np.random.default_rng(0)
+        out["headroom"] = {}
+        for s_, per in per_all.items():
+            if s_ == 0.0:
+                continue
+            ppl = sorted(set(per) & set(per_all[0.0]))
+            d = np.array(
+                [
+                    np.mean(
+                        [
+                            per[p]["base"]["error_after_switch"][j]
+                            - per_all[0.0][p]["base"]["error_after_switch"][j]
+                            for j in JOINTS
+                        ]
+                    )
+                    for p in ppl
+                ]
+            )
+            boots = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(2000)]
+            out["headroom"][gtag(s_)] = {
+                "mean": float(d.mean()),
+                "ci95": [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))],
+                "n": len(ppl),
+            }
+    teach = [r for r in final if r["model"] == "distill" and r.get("teacher")]
+    if teach:  # teacher vs study 3's base final run (same share, fold, seed)
+        ref = {
+            (r["share"], r["fold"]["fold"], r["seed"]): r["metrics"]["val_rmse"]
+            for r in recs
+            if r.get("kind") == "gfinal" and r.get("model") == "base" and r.get("status") == "done"
+        }
+        pairs_t = {
+            (r["share"], r["fold"]["fold"], r["seed"]): r["teacher"]["val_rmse"] for r in teach
+        }
+        rows = [(k, v, ref[k]) for k, v in sorted(pairs_t.items()) if k in ref]
+        out["teacher_check"] = {
+            "n": len(rows),
+            "mean_abs_diff": float(np.mean([abs(a - b) for _, a, b in rows])) if rows else None,
+            "max_abs_diff": float(np.max([abs(a - b) for _, a, b in rows])) if rows else None,
+        }
     if all(s in per_all for s in GPRIMARY):
         ppl = sorted(set.intersection(*(set(per_all[s]) for s in GPRIMARY)))
         d = np.array(
@@ -840,7 +907,7 @@ def gsummary(runs_dir: Path, require: int = 22) -> dict:
         )
         pt = stats.page_trend_test(d, predicted_ranks=[1, 2, 3])
         out["trend"] = {"n": len(ppl), "statistic": float(pt.statistic), "p": float(pt.pvalue)}
-    tune = [r for r in recs if r.get("kind") == "gtune" and r.get("status") == "done"]
+    tune = [r for r in recs if r.get("kind") == f"{prefix}tune" and r.get("status") == "done"]
     out["tuning"] = {}
     for r in tune:
         m = r["model"].split("-")[0]
@@ -877,7 +944,8 @@ def gsummary(runs_dir: Path, require: int = 22) -> dict:
             "setup_gyro_ok": {n: v["setup"]["gyro_ok"] for n, v in m["people"].items()},
         }
     (runs_dir / "summary").mkdir(exist_ok=True)
-    (runs_dir / "summary" / "results3.json").write_text(json.dumps(out))
+    name = "results3.json" if not study4 else f"results_{prefix}.json"
+    (runs_dir / "summary" / name).write_text(json.dumps(out))
     return out
 
 

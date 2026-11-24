@@ -21,6 +21,8 @@ COLORS = {
     "pinn_cal": "#C44E52",
     "base_cal": "#8172B3",
     "pinn_lab": "#937860",
+    "distill": "#2CA02C",
+    "all-sensor base": "#999999",
 }
 BANDS = {
     "base": "rgba(76,114,176,0.18)",
@@ -29,6 +31,7 @@ BANDS = {
     "pinn_cal": "rgba(196,78,82,0.18)",
     "base_cal": "rgba(129,114,179,0.18)",
     "pinn_lab": "rgba(147,120,96,0.18)",
+    "distill": "rgba(44,160,44,0.18)",
 }
 LAYOUT = {
     "template": "plotly_white",
@@ -196,18 +199,23 @@ def people(runs_dir: Path, s: dict, t0: float = -10.0, t1: float = 40.0) -> dict
     return out
 
 
-def error_vs_share(s3: dict, models=("base", "pinn", "pinn_lab")) -> dict:
-    """Study 3 main plot: error on stairs (mean of 3 joints) against the share of missing
-    angles; mean over people with a t-based 95% CI."""
+def error_vs_share(s3: dict, models=("base", "pinn", "pinn_lab"), ref: dict | None = None) -> dict:
+    """Studies 3-4 main plot: error on stairs (mean of 3 joints) against the share of missing
+    angles; mean over people with a t-based 95% CI. ref: study 3's summary, drawn as the
+    all-sensor `base` reference line (study 4)."""
     from scipy import stats
 
     tags = list(s3["shares"])
     x = [f"{round(s3['shares'][t]['share'] * 100)}%" for t in tags]
     traces = []
-    for m in models:
+    series = [(m, s3, m) for m in models]
+    if ref is not None:
+        series.append(("all-sensor base", ref, "base"))
+    for m, src, key in series:
         ys, lo, hi, xs = [], [], [], []
         for t, xl in zip(tags, x, strict=True):
-            v = s3["shares"][t]["primary_values"].get(m)
+            blk = src["shares"].get(t)
+            v = blk["primary_values"].get(key) if blk else None
             if v is None:
                 continue
             v = np.asarray(v)
@@ -229,7 +237,7 @@ def error_vs_share(s3: dict, models=("base", "pinn", "pinn_lab")) -> dict:
                 "line": {
                     "color": COLORS[m],
                     "width": 2,
-                    "dash": "dot" if m == "pinn_lab" else "solid",
+                    "dash": "dot" if m in ("pinn_lab", "all-sensor base") else "solid",
                 },
                 "hovertemplate": f"{m}: %{{y:.2f}}°<extra></extra>",
             }
@@ -291,6 +299,19 @@ def main() -> None:
                 b, models=["base", "pinn"], title=f"{pct}% of training angles missing"
             )
         (a.runs / "summary" / "figures3.json").write_text(json.dumps(figs3))
+    for pre in ("g4", "g4a"):  # study 4
+        r4 = a.runs / "summary" / f"results_{pre}.json"
+        if not r4.exists():
+            continue
+        s4 = json.loads(r4.read_text())
+        ref = json.loads(r3.read_text()) if r3.exists() else None
+        figs4 = {"error_vs_share": error_vs_share(s4, ("base", "pinn", "distill"), ref=ref)}
+        for t, b in s4["shares"].items():
+            pct = round(b["share"] * 100)
+            figs4[f"error_over_time_{t}"] = error_over_time(
+                b, models=["base", "pinn"], title=f"{pct}% of training angles missing"
+            )
+        (a.runs / "summary" / f"figures_{pre}.json").write_text(json.dumps(figs4))
     print("wrote figures.json and people.json")
 
 

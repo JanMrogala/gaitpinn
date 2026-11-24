@@ -165,8 +165,8 @@ def test_study2_summary_and_page(tmp_path):
     assert "pinn_cal is better" in page and "Holm-adjusted" in page and "fold 3" in page
 
 
-def fake_gruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 13))):
-    rng = np.random.default_rng(2)
+def fake_gruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 13)), prefix="g"):
+    rng = np.random.default_rng(2 if prefix == "g" else 3)
     t = (np.arange(4000) - 2000) / 100
     lab = np.where(t < 0, "walk", "stairascent").astype(object)
     lab[2000:2200] = "walk-stairascent"
@@ -174,7 +174,7 @@ def fake_gruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 13))):
         for share in (0.0, 0.5, 0.9, 0.99):
             models = [("base", 3.0), ("pinn", 2.0 if share == 0.99 else 3.0)]
             if share > 0:
-                models.append(("pinn_lab", 3.0))
+                models.append(("pinn_lab", 3.0) if prefix == "g" else ("distill", 3.0))
             for m, extra in models:
                 for seed in range(5):
                     y = rng.normal(0, 10, (4000, 3))
@@ -185,8 +185,9 @@ def fake_gruns(d, people=tuple(f"AB{i:02d}" for i in range(1, 13))):
                     walk = (e[:2000], score[:2000], {"levelground": (e[:2000], score[:2000])})
                     met = metrics.run_metrics(stream, y + e, walk) | {"val_rmse": 2.0}
                     rec = {
-                        "run_id": f"gfinal-{m}-s{round(share * 100):02d}-{p}-s{seed}-jx",
-                        "kind": "gfinal",
+                        "run_id": f"{prefix}final-{m}-s{round(share * 100):02d}-{p}-s{seed}-jx",
+                        "kind": f"{prefix}final",
+                        "teacher": {"val_rmse": 2.0} if m == "distill" else None,
                         "status": "done",
                         "model": m,
                         "person": p,
@@ -235,3 +236,33 @@ def test_study3_verdict_rules():
     assert metrics.gverdict(w, {}) == "equivalent within ±0.5°"
     w = {"p_holm": 0.3, "rank_biserial_r": 0.1, "hl_ci95": [-0.2, 0.7]}
     assert metrics.gverdict(w, {}) == "inconclusive"
+
+
+def test_study4_summary_and_page(tmp_path):
+    fake_gruns(tmp_path)  # study 3 (reference line and teacher check)
+    fake_gruns(tmp_path, prefix="g4")
+    s3 = metrics.gsummary(tmp_path, require=12)
+    s = metrics.gsummary(tmp_path, require=12, prefix="g4")
+    sh = s["shares"]
+    assert (
+        sh["s99"]["test"]["family"] == "primary"
+        and sh["s99"]["test"]["p_holm"] == sh["s99"]["test"]["p"]
+    )
+    assert sh["s99"]["test"]["verdict"] == "pinn is better"
+    assert {sh["s50"]["test"]["family"], sh["s90"]["test"]["family"]} == {"secondary"}
+    assert "p_holm" not in sh["s00"]["test"]
+    for t in ("s50", "s90", "s99"):
+        assert "verdict" in sh[t]["secondary"]["distill vs pinn/primary"]
+    assert set(s["headroom"]) == {"s50", "s90", "s99"}
+    assert s["teacher_check"]["n"] == 3 * 4 * 5 and s["teacher_check"]["max_abs_diff"] == 0.0
+    assert (
+        metrics.gsummary(tmp_path, require=12)["shares"]["s99"]["test"]["p"]
+        == s3["shares"]["s99"]["test"]["p"]
+    )  # study 3 is not changed by study-4 records
+    figs = {"error_vs_share": plot.error_vs_share(s, ("base", "pinn", "distill"), ref=s3)}
+    for t, b in sh.items():
+        figs[f"error_over_time_{t}"] = plot.error_over_time(b, models=["base", "pinn"])
+    (tmp_path / "summary" / "figures_g4.json").write_text(json.dumps(figs))
+    site.build(tmp_path, tmp_path / "site")
+    page = (tmp_path / "site" / "study4.html").read_text()
+    assert "EMG only (primary)" in page and "distill vs pinn" in page and "headroom" in page

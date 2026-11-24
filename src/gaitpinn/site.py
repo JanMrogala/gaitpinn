@@ -23,6 +23,7 @@ PAGES = [
     ("people.html", "People"),
     ("study2.html", "Study 2"),
     ("study3.html", "Study 3"),
+    ("study4.html", "Study 4"),
     ("runs.html", "Runs"),
     ("method.html", "Method"),
 ]
@@ -562,6 +563,136 @@ sel.onchange=()=>eot(sel.value); eot('error_over_time_{first}');
     return body, True
 
 
+def _gap_set(s: dict, pre: str, primary: bool) -> str:
+    """One study-4 input set: tests, headroom, numbers, figures (ids prefixed with pre)."""
+    sh = s["shares"]
+    tests = ""
+    for b in sh.values():
+        w = b["test"]
+        if "p_holm" not in w:
+            continue
+        fam = "primary" if w.get("family") == "primary" else "secondary, Holm over 50% and 90%"
+        tests += _test_line(f"{round(b['share'] * 100)}% missing ({fam})", w, b["numbers"])
+    hr = s.get("headroom", {})
+    rows = ""
+    for t, b in sh.items():
+        n = b["numbers"]
+        cells = "".join(
+            f"<td>{n[m]['error_after_switch_mean3']:.2f}</td>" if m in n else "<td>–</td>"
+            for m in ("base", "pinn", "distill")
+        )
+        kn = "".join(
+            f"<td>{n[m]['error_after_switch'][j]:.2f}</td>"
+            for m in ("base", "pinn")
+            for j in ("knee", "ankle")
+        )
+        h = hr.get(t)
+        hc = f"{h['mean']:+.2f} [{h['ci95'][0]:+.2f}, {h['ci95'][1]:+.2f}]" if h else "–"
+        folds = " ".join(f"{v:+.2f}" for v in b["test"]["per_fold_median"].values())
+        rows += (
+            f"<tr><td>{round(b['share'] * 100)}%</td>{cells}<td>{hc}</td>{kn}<td>{folds}</td></tr>"
+        )
+    sec = ""
+    for b in sh.values():
+        w = b["secondary"].get("distill vs pinn/primary")
+        if w:
+            sec += _test_line(
+                f"{round(b['share'] * 100)}%: distill vs pinn (Holm over the shares)",
+                w,
+                b["numbers"],
+                "distill",
+                "pinn",
+            )
+    if "s00" in sh:
+        sec += _test_line("0% missing (reference)", sh["s00"]["test"], sh["s00"]["numbers"])
+    for b in sh.values():
+        w = b["secondary"].get("base vs pinn/primary/gyro-check people")
+        if w and b["share"] == 0.99:
+            sec += _test_line(
+                f"99%: the {w['n']} people who passed study 1's gyro check", w, b["numbers"]
+            )
+    if "trend" in s:
+        sec += (
+            f"<li><b>Does the base − pinn difference grow with the share?</b> Page trend test "
+            f"over 50%, 90%, 99%: p {_p(s['trend']['p'])} (n = {s['trend']['n']}).</li>"
+        )
+    tc = s.get("teacher_check")
+    if tc and tc["n"]:
+        sec += (
+            f"<li><b>Distill teacher vs study 3's base</b> (same share, fold, seed): mean "
+            f"|difference| in validation score {tc['mean_abs_diff']:.2f}°, max "
+            f"{tc['max_abs_diff']:.2f}° over {tc['n']} runs (GPU noise only expected).</li>"
+        )
+    tune_rows = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>"
+        + html.escape(
+            ", ".join(f"{a}: {v:.2f}" for a, v in sorted(r.items(), key=lambda kv: float(kv[0])))
+        )
+        + "</td></tr>"
+        for k, r in sorted(s.get("tuning", {}).items())
+    )
+    opts = "".join(
+        f'<option value="{pre}:error_over_time_{t}">{round(b["share"] * 100)}% missing</option>'
+        for t, b in sh.items()
+    )
+    first = next(iter(sh))
+    return f"""<div class=note><b>Tests</b> (base vs pinn, paired across people):
+<ul>{tests}</ul></div>
+<div data-fig="{pre}:error_vs_share" style="height:480px"></div>
+<p>Error bars: 95% interval of the mean across people (the tests are paired). Dotted grey:
+study 3's all-sensor <code>base</code>, which sees the gyros as inputs.</p>
+<div class=wrap><table><thead><tr><th>missing</th><th>base</th><th>pinn</th><th>distill</th>
+<th>headroom base − base@0% [95% CI]</th><th>base knee</th><th>base ankle</th><th>pinn knee</th>
+<th>pinn ankle</th><th>per-fold median base − pinn</th></tr></thead><tbody>{rows}</tbody>
+</table></div>
+<p>Errors: error after switch to stairs (°), mean of hip, knee and ankle unless named.</p>
+<h3>Secondary</h3><ul>{sec}</ul>
+<p><select class=eotsel data-target="{pre}-eot">{opts}</select></p>
+<div id="{pre}-eot" data-first="{pre}:error_over_time_{first}" style="height:500px"></div>
+<details><summary>Tuning: best validation score per λ (pinn) and weight decay (base)</summary>
+<div class=wrap><table><tbody>{tune_rows}</tbody></table></div></details>"""
+
+
+def study4_body(runs_dir: Path) -> tuple[str, bool]:
+    """Study 4 (PLAN4.md): the network sees no gyros; gyros only in the physics loss."""
+    intro = (
+        "<h1>Study 4: gyros only in the physics loss</h1><p>As in study 3 (gaps in the "
+        "training angles), but the network does not see the gyros: <code>base</code> and "
+        "<code>pinn</code> get EMG only (primary) or EMG + accelerometers (secondary). The "
+        "gyros enter only <code>pinn</code>'s physics loss, so the physics carries "
+        "information the network cannot see. <code>distill</code> (secondary) uses the gyros "
+        "another way: an all-sensor teacher fills in the missing angles. The primary test is "
+        "<code>base</code> vs <code>pinn</code> at 99% missing, EMG only. Pre-registered in "
+        "<code>PLAN4.md</code>, after a feasibility pilot.</p>"
+    )
+    parts, figs = [], {}
+    for pre, title in (("g4", "EMG only (primary)"), ("g4a", "EMG + accelerometers (secondary)")):
+        s = load_summary(runs_dir, f"results_{pre}")
+        f = load_summary(runs_dir, f"figures_{pre}")
+        if s is None or f is None:
+            continue
+        figs |= {f"{pre}:{k}": v for k, v in f.items()}
+        parts.append(f"<h2>{title}</h2>" + _gap_set(s, pre, pre == "g4"))
+    if not parts:
+        return intro + EMPTY, False
+    body = (
+        intro
+        + "".join(parts)
+        + f"""
+<script>
+const F={json.dumps(figs)};
+const cfg={{responsive:true,displaylogo:false}};
+document.querySelectorAll('[data-fig]').forEach(el=>{{const f=F[el.dataset.fig];
+  Plotly.newPlot(el,f.data,f.layout,cfg);}});
+document.querySelectorAll('[data-first]').forEach(el=>{{const f=F[el.dataset.first];
+  Plotly.newPlot(el,f.data,f.layout,cfg);}});
+document.querySelectorAll('select.eotsel').forEach(sel=>{{sel.onchange=()=>{{
+  const f=F[sel.value]; Plotly.react(sel.dataset.target,f.data,f.layout,cfg);}};}});
+</script>"""
+    )
+    return body, True
+
+
 def nz_note(w: dict) -> str:
     """Wilcoxon drops people with an exactly zero difference; say so when it happens."""
     k = w.get("n_nonzero", w["n"])
@@ -617,6 +748,8 @@ def build(runs_dir: Path, out: Path) -> None:
     (out / "study2.html").write_text(page("study2.html", "Study 2", s2, s2_plot))
     s3, s3_plot = study3_body(runs_dir)
     (out / "study3.html").write_text(page("study3.html", "Study 3", s3, s3_plot))
+    s4, s4_plot = study4_body(runs_dir)
+    (out / "study4.html").write_text(page("study4.html", "Study 4", s4, s4_plot))
     (out / "runs.html").write_text(page("runs.html", "Runs", runs_body(runs_dir)))
     (out / "method.html").write_text(page("method.html", "Method", method_body()))
     (out / ".nojekyll").write_text("")
