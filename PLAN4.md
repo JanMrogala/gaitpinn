@@ -37,7 +37,7 @@ angles only, as more of the training angles are missing?
 |---|---|---|
 | `base` | no gyros (input set below) | remaining true angles only |
 | `pinn` | same | remaining angles + gyro term on all data (labelled and unlabelled batches); no swing term |
-| `distill` (secondary) | same | remaining angles + a teacher's predictions in place of the lost angles. The teacher is study 3's all-sensor `base` configuration for that share and fold, retrained in the same task with the same seed and mask. It is a non-physics way to use the gyros, and the fair competitor for `pinn`. Not tuned: it uses `base`'s choice. |
+| `distill` (secondary) | same | remaining angles + a teacher's predictions in place of the lost angles. The teacher is study 3's all-sensor `base` configuration for that share and fold, retrained in the same task with the same seed and mask. It is a non-physics way to use the extra sensors, but not a perfectly matched competitor (see below). Not tuned: it uses `base`'s choice. |
 | reference (not tested) | all 35 channels | study 3's `base` at the same share |
 
 **Input sets:** two, each run as a full study with its own tuning, choices and tests.
@@ -72,21 +72,57 @@ alignment and physics people. No hip term, no swing term, no torque output.
 
 ## Final runs, metrics and tests
 
+**Headroom.** Losing angles can only cost so much: in study 3, the all-sensor `base`'s stair
+error rose by only 0.07° at 50%, 0.15° at 90% and 0.74° at 99%.
+- The **headroom** at a share is `base`@share − `base`@0%: the EMG-only `base` stair error,
+  mean of hip, knee and ankle, averaged over people, with a 95% bootstrap CI over people.
+- `pinn`'s gain is reported next to the headroom.
+- **"Equivalent"** is interpreted only where the headroom is at least 0.5°.
+- **A gain larger than the headroom** (`pinn` beating the full-label `base`) counts as
+  regularization, not as recovering lost information.
+
+
 - **Final runs:** per input set, share, fold and model, the chosen configuration with seeds
   0–4 (= mask draws). `distill`: EMG-only set, shares 50%, 90% and 99%.
 - **Primary endpoint:** error after switch to stairs, mean of hip, knee and ankle.
-- **Primary tests:** EMG-only set, `base − pinn`, one per share (50%, 90%, 99%).
-  - Wilcoxon signed-rank paired over the 22 people, Holm-corrected over the three.
-  - Verdicts as in study 3: "better" needs Holm p < 0.05 and fold agreement; "equivalent"
-    means the Hodges–Lehmann CI lies within ±0.5°; otherwise "inconclusive".
+- **Primary test (single):** EMG-only set, 99% missing, `base − pinn`, paired over the 22
+  people.
+  - Two-sided Wilcoxon signed-rank (`zero_method="wilcox"`), α = 0.05.
+  - 99% is the only share with real headroom.
+  - Verdicts as in study 3: "better" needs p < 0.05 and the per-fold median favouring the
+    same model in at least 3 of 4 folds; "equivalent" means the Hodges–Lehmann CI lies within
+    ±0.5°; otherwise "inconclusive".
+- If λ = 0.01 (the smallest) wins at a share, the result is reported as "validation
+  preferred almost no physics".
 - **Secondary:**
+  - 50% and 90% (EMG only), Holm-corrected as a family of two;
   - the same tests for the EMG + accelerometers set;
-  - `pinn` vs `distill`;
+  - **`pinn` vs `distill`** (EMG only): Wilcoxon per share at 50%, 90% and 99%,
+    Holm-corrected as its own family, with study 3's verdicts.
+    - Reading: `distill` ≥ `pinn` means the physics is not needed to use the extra
+      sensors.
+    - `pinn` > `distill` only means `pinn` beats an untuned teacher–student whose teacher
+      sees more. The teacher sees all 35 channels (accelerometers too, for the EMG-only
+      set) and every training person's gyros, while `pinn` uses only the physics people's
+      gyros, and only through the knee and ankle terms.
+  - the teacher's validation score against study 3's `base` final run for the same share,
+    fold and seed (they should agree up to GPU noise);
+  - per-joint stair error, especially knee and ankle: the gyro term covers only those two
+    joints, while the primary endpoint also includes the hip;
   - the 0% share;
   - walking error, per joint, climbing up and down;
   - the 16 people who passed study 1's gyro check;
   - the Page trend test over 50%, 90% and 99% (does the `base − pinn` difference grow with
     the share?).
+
+## Disclosures
+
+- The pilot used fold 0's validation people at the tuning seed 100, with configurations that
+  are in the full grid. `pinn`'s λ grid (not `base`'s) was adapted from it. The 3-of-4
+  fold-agreement rule limits what this can do.
+- The 22 test people are the same as in studies 1–3, whose results motivated this study.
+- No placebo control: a gyro reference shifted in time would rule out "any derivative penalty
+  would do". It was considered and left out.
 
 ## Compute
 
@@ -151,3 +187,14 @@ people were involved in the pilot.
     - `distill` through teacher fill-ins (`GapPerson.fill`);
     - tests that the gyros never reach the network and that lost angles never change
       `pinn` or `distill` training.
+- **2026-11-24, plan revised after an independent review, before any study-4 tuning run:**
+  - 99% is the single primary share (study 3 showed almost no headroom at 50% and 90%);
+  - headroom defined and reported;
+  - smallest-λ rule;
+  - `pinn` vs `distill` test specified, and `distill` described accurately;
+  - per-joint secondary;
+  - disclosures.
+  - Code: `gdistill` refuses to run as study 3 (`--prefix g`); job names carry the study
+    prefix; the lost-angle test also runs the study-4 `pinn` setup. The study-4 analysis
+    (`gsummary` with a prefix, `distill` and headroom) is committed before any final run
+    is scored.

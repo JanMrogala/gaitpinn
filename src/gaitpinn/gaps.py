@@ -631,6 +631,8 @@ def main() -> None:
     src = {"pinn_lab": "pinn", "distill": "base"}.get(a.model, a.model)
     base_cfg = yaml.safe_load((cdir / f"{a.prefix}{src}.yaml").read_text())
     c = {k: v for k, v in base_cfg.items() if k != "grid"} | chosen[src] | mx
+    if a.model == "distill" and (a.prefix == "g" or not a.teacher_chosen):
+        raise SystemExit("distill is a study-4 model: needs --prefix g4/g4a and --teacher-chosen")
     if a.model == "distill":  # teacher: study 3's all-sensor base, same share, fold and mask
         tch = json.loads(a.teacher_chosen.read_text())[f"{share_tag(a.share)}/fold{a.fold}"]
         tbase = yaml.safe_load((cdir / "gbase.yaml").read_text())

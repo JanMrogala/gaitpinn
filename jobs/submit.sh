@@ -29,11 +29,14 @@ case "$what" in
     if [ "$what" = gfinal ] || [ "$what" = glab ] || [ "$what" = gdistill ]; then
       test -f "$RUNS_LOCAL/chosen_$P.json" || { echo "run: gaitpinn.gaps gselect --prefix $P" >&2; exit 1; }
       rsync -a "$RUNS_LOCAL/chosen_$P.json" "$LUMI_HOST:$SCR/"
-      [ "$what" = gdistill ] && rsync -a "$RUNS_LOCAL/chosen_g.json" "$LUMI_HOST:$SCR/"
+      if [ "$what" = gdistill ]; then
+        [ "$P" = g ] && { echo "gdistill needs GP_PREFIX=g4 or g4a" >&2; exit 1; }
+        rsync -a "$RUNS_LOCAL/chosen_g.json" "$LUMI_HOST:$SCR/"
+      fi
     fi
     part=small-g; time="${GP_TIME:-02:00:00}"
     script="--array=${GP_ARRAY:-0-$((n - 1))} jobs/xtrain.sbatch"
-    args=""; extra=",GP_KIND=$what,GP_PREFIX=$P" ;;
+    args=""; extra=",GP_KIND=$what,GP_PREFIX=$P"; jobname="gp-$P-$what" ;;
   final-strong)
     # strongly physics-constrained pinn: tuned pinn settings with a fixed lambda (PLAN.md log)
     python3 -c "import json,sys; c=json.load(open(sys.argv[1])); c['lam']=0.1; json.dump(c, open(sys.argv[2],'w'), indent=2)" \
@@ -57,7 +60,7 @@ case "$what" in
 esac
 ssh "$LUMI_HOST" "test -f '$ROOT/code/$COMMIT/COMMIT' || { echo 'commit not synced' >&2; exit 1; }
   cd '$ROOT/code/$COMMIT' && sbatch --parsable --account='$LUMI_PROJECT' \
-  --partition=$part --time=$time --job-name=gp-$what \
+  --partition=$part --time=$time --job-name=${jobname:-gp-$what} \
   --output='$SCR/logs/%x-%A_%a.out' \
   --export=ALL,GP_ROOT='$ROOT',GP_SCR='$SCR',GP_SIF='$SIF',GP_COMMIT='$COMMIT'${extra:-} \
   $script $args"

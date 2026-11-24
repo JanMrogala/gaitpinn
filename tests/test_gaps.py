@@ -125,6 +125,8 @@ def _train(h5dir, model, share):
     tr = [gaps.GapPerson(h5dir / f"{n}.h5", share, 7) for n in ("P1", "P2")]
     va = [gaps.GapPerson(h5dir / "P3.h5", share, 7, setup=False)]
     cfg = CFG | {"model": model}
+    if model == "pinn4":  # study 4: EMG-only network, gyro term only
+        cfg = CFG | {"model": "pinn", "inputs": "emg", "swing": False}
     net, out = gaps.fit(cfg, tr, va, 7, torch.device("cpu"), trace=True)
     state = {k: v.clone() for k, v in net.state_dict().items()}
     setups = [p.setup_info for p in tr]
@@ -143,11 +145,11 @@ def _corrupt(src, dst, people, how):
                 h["files"][k]["y"][...] = y
 
 
-@pytest.mark.parametrize("model", ["base", "pinn"])
+@pytest.mark.parametrize("model", ["base", "pinn", "pinn4"])
 @pytest.mark.parametrize("share", [0.5, 0.9])
 def test_lost_angles_never_change_anything(people, tmp_path, model, share):
     ref = _train(people, model, share)
-    assert ref[1]["unlabelled_batch"] == (model == "pinn")
+    assert ref[1]["unlabelled_batch"] == model.startswith("pinn")
     assert any(s["gyro_ok"] for s in ref[0])
     for how in ("random", "huge"):
         d = tmp_path / how
