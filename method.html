@@ -1,0 +1,282 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>gaitpinn · Method</title><style>
+:root { --bg:#ffffff; --fg:#1d1f23; --muted:#5f6670; --line:#d9dce1; --accent:#2a62c9;
+        --card:#f6f7f9; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#15171a; --fg:#e6e8eb; --muted:#9aa1ab; --line:#2c3036; --accent:#7ea6f0;
+          --card:#1d2024; }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+       font:16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { border-bottom:1px solid var(--line); }
+nav, main { max-width:1000px; margin:0 auto; padding:0 16px; }
+nav { display:flex; gap:20px; align-items:center; height:56px; flex-wrap:wrap; }
+nav b { margin-right:auto; }
+nav a { color:var(--muted); text-decoration:none; }
+nav a.on { color:var(--fg); font-weight:600; }
+main { padding-top:24px; padding-bottom:48px; }
+.note { background:var(--card); border:1px solid var(--line); border-radius:8px;
+        padding:14px 16px; }
+table { border-collapse:collapse; width:100%; font-size:14px; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+th { cursor:pointer; user-select:none; color:var(--muted); font-weight:600; }
+.wrap { overflow-x:auto; }
+a { color:var(--accent); }
+code { font-size:13px; }
+</style></head><body><header><nav><b>gaitpinn</b><a href="index.html">Results</a><a href="people.html">People</a><a href="study2.html">Study 2</a><a href="study3.html">Study 3</a><a href="study4.html">Study 4</a><a href="runs.html">Runs</a><a href="method.html" class=on>Method</a></nav></header><main><h1>Method</h1><h2>Question</h2>
+<p>Two models are trained on <strong>level walking only</strong>. Each is then fed a stream that switches from
+walking to <strong>stair climbing</strong>, with no retraining. Which model keeps a low joint-angle error for
+longer after the switch?</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>base</code></td>
+<td>small causal network, trained on angle error only (data-only)</td>
+</tr>
+<tr>
+<td><code>pinn</code></td>
+<td>the same network, trained on angle error plus a physics loss</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Main result:</strong> a plot of error over time since the switch, with <code>base</code> and <code>pinn</code> on the same
+axes.</p>
+<h2>Data</h2>
+<p>Several datasets meet needs 1–5 on paper: Camargo, Darmstadt and Scherpereel, the last except
+for height. Camargo is the strongest of them because it is the only one with all of these:</p>
+<ul>
+<li><strong>Dedicated IMUs</strong> on thigh, shank and foot. Darmstadt has no dedicated thigh IMU; Scherpereel
+  has no dedicated segment IMUs at all.</li>
+<li><strong>Plenty of steady walking</strong> for training. Treadmill at 28 speeds plus level-ground circuits,
+  against short, non-steady bouts in Darmstadt and 3 treadmill speeds in Scherpereel.</li>
+<li><strong>The most people:</strong> 22, against 12 for each of the other two.</li>
+<li><strong>About 40 stair files per person.</strong></li>
+<li><strong>11 EMG channels</strong>, with three knee extensors and four knee flexors.</li>
+</ul>
+<h3>Caveats (to handle in the data step)</h3>
+<ul>
+<li><strong>One session per person</strong>, so session-to-session drift can't be tested with Camargo.
+  MyPredict 3 is the candidate for that later.</li>
+<li><strong>Sensors on the right leg only.</strong> The target is the right hip, knee and ankle (<code>*_r</code> columns
+  in the IK table).</li>
+<li><strong>The gyro axis and sign differ per person.</strong> The best axis for
+  <code>d(knee)/dt ≈ gyro_shank − gyro_thigh</code> is Y in one person and a Y/Z mix in others (3 people
+  checked). Alignment must be fitted per person on walking training data.</li>
+<li><strong>Stair files are short.</strong> Each is ~15 s and contains:</li>
+<li>a 2–3 s walking approach;</li>
+<li>an ascent of 1.3–3 s;</li>
+<li>a 3–6 s stand and turn on the top platform;</li>
+<li>a descent of 1.2–2.8 s;</li>
+<li>about one stride of walk-off.</li>
+</ul>
+<p>The files are cut from longer recordings, and the 3–8 s between repetitions are not released.
+- <strong>The <code>idle</code> label at the start of stair files is already walking.</strong> Use pelvis speed or gait
+  events, not labels, to separate walking from standing.
+- <strong>The files are MATLAB tables</strong>, which scipy can't read directly. They need a one-off
+  conversion.
+- <strong>EMG is band-passed raw (20–400 Hz).</strong> It must be rectified, smoothed with causal filters and
+  resampled.</p>
+<h2>Data source and licence</h2>
+<p><strong>Camargo 2021</strong>, chosen on 2026-11-19.</p>
+<p>Camargo J, Ramanathan A, Flanagan W, Young A. A comprehensive, open-source dataset of lower limb
+biomechanics in multiple conditions of stairs, ramps, and level-ground ambulation and
+transitions. <em>Journal of Biomechanics</em> 119:110320 (2021), doi:10.1016/j.jbiomech.2021.110320.
+Data: Mendeley Data, doi:10.17632/fcgm3chfff, 10.17632/k9kvm5tn3f and 10.17632/jj3r5f9pnf
+(version 2), licensed CC BY 4.0. The angle traces shown on the website are derived from this
+dataset.</p>
+<h2>Metrics</h2>
+<p>All errors are RMSE in degrees, per person, model, seed and joint.</p>
+<ul>
+<li><strong>Rolling error:</strong> RMSE over a <strong>trailing</strong> 2 s window.</li>
+<li><strong>Walking error <code>W</code>:</strong> RMSE over the person's <strong>level-ground</strong> walking test files. This
+  matches the walking part of the stream. One <code>W</code> is used for both the dashed line and the
+  failure threshold. The RMSE over the whole walking test split, treadmill included, is
+  reported separately.</li>
+<li><strong>Error after switch:</strong> RMSE over the stairs part.</li>
+<li><strong>Time to fail:</strong></li>
+<li>Computed per seed: the first <code>t ≥ 0</code> at which the rolling error rises above 1.5 × <code>W</code> and
+    stays above it for the next 2 s.</li>
+<li>A hold that runs past the end of the stream counts as not failed.</li>
+<li><strong>Censoring:</strong> a run that never fails is set to <code>H</code>, the stairs-part length of the person
+    with the shortest stream. All time-to-fail values are also capped at <code>H</code>, so every person
+    has the same horizon. A run that never fails is reported as "&gt; H".</li>
+<li><strong>Per person:</strong> the median over the 5 seeds.</li>
+<li><strong>Seeds:</strong> every other metric is averaged over the 5 seeds per person first, so each person
+  counts once.</li>
+</ul>
+<h3>Plots</h3>
+<p><strong>Main plot (<code>error_over_time</code>):</strong></p>
+<ul>
+<li>x = time since switch (s), from −30 s to <code>H</code>; y = rolling error (°).</li>
+<li>One panel each for hip, knee and ankle.</li>
+<li>Lines for <code>base</code> and <code>pinn</code>: the mean over people of the seed-averaged rolling error.</li>
+<li>The band is the t-based 95% confidence interval of that mean across people.</li>
+<li>A vertical line at <code>t = 0</code> and a dashed line at each model's mean <code>W</code>.</li>
+</ul>
+<p><strong>Secondary plot (<code>error_by_bout</code>):</strong></p>
+<ul>
+<li>Error against time since each stair entry, plotted separately for <strong>ascent</strong> and <strong>descent</strong>.</li>
+<li>Entries are the first sample labelled <code>walk-stairascent</code> or <code>walk-stairdescent</code>.</li>
+<li>The window runs from −2 s to +6 s.</li>
+<li><strong>Formula:</strong> at each offset, <code>sqrt(mean over bouts of e²)</code> per person, then the mean over
+  people.</li>
+<li>Labels are used only to align the scoring, never as model inputs.</li>
+<li>In step 4, the descent entry label is checked on the label tables only, before any model is
+  trained.</li>
+</ul>
+<h3>Comparison and verdict</h3>
+<ul>
+<li><strong>Primary endpoint:</strong> error after switch, averaged over hip, knee and ankle. The question is
+  about all three joint angles. Hip has no physics term, so a knee-only endpoint would tilt the
+  test towards <code>pinn</code>.</li>
+<li><strong>Test:</strong> a paired, two-sided Wilcoxon signed-rank test across included people, on
+  <code>base − pinn</code>, with <code>zero_method="wilcox"</code>.</li>
+<li><strong>Effect size:</strong> the matched-pairs rank-biserial correlation <code>r</code>, plus the Hodges–Lehmann
+  estimate of <code>base − pinn</code> in degrees with a 95% bootstrap interval.</li>
+<li><strong>Verdict:</strong></li>
+<li>"<code>pinn</code> is better": p &lt; 0.05 and <code>r &gt; 0</code>.</li>
+<li>"<code>base</code> is better": p &lt; 0.05 and <code>r &lt; 0</code>.</li>
+<li>Otherwise "no clear difference".</li>
+<li>All three outcomes are reported equally clearly.</li>
+<li><strong>Secondary results</strong> (reported, not part of the verdict):</li>
+<li>error after switch per joint;</li>
+<li>error after switch on ascent and on descent samples only;</li>
+<li>time to fail per joint (same paired test, using the capped values);</li>
+<li>the <code>error_by_bout</code> curves.</li>
+</ul>
+<h2>Decisions log</h2>
+<ul>
+<li><strong>2026-11-19, stair files opened during dataset selection.</strong> Before any model existed,
+  single stair files of AB06, AB25 and AB30 were opened. The purpose was to check labels,
+  durations and whether <code>d(knee)/dt</code> matches the gyro difference. Findings:</li>
+<li>stair phases last about 1–3 s;</li>
+<li>each file contains an approach, a stand and turn, and walk-off;</li>
+<li>the gyro sagittal axis and sign differ per person.</li>
+</ul>
+<p>These findings shaped three choices:
+  - the per-person sensor alignment;
+  - the <code>error_by_bout</code> window (−2 to +6 s);
+  - the question to the user about the stairs part.</p>
+<p>No number in this plan was tuned on those files. In step 4, the need for per-person alignment
+  is re-checked on <strong>walking training files only</strong>, and the result is logged here.
+- <strong>2026-11-19, walking data.</strong> The training task is level walking: treadmill plus level-ground
+  circuits. Ramps are not used. Agreed with the user.
+- <strong>2026-11-19, one model per person and seed.</strong> Agreed with the user.
+- <strong>2026-11-19, stairs part = whole stair files</strong> (option A), chosen by the user before any
+  model was trained. The alternative was to keep only the climbing segments.
+- <strong>2026-11-19, time limit:</strong> the whole study must take under 24 h of wall-clock time. Set by
+  the user, who will relax it if it limits the study too much.
+- <strong>2026-11-19, target quality rule</strong> (above). Added after AB25's broken
+  <code>LevelGround_cw_slow_01_05</code> turned up during conversion, before any model was trained.
+- <strong>2026-11-19, gyro alignment re-checked on walking training files only (AB25).</strong>
+  - Knee: <code>d(knee)/dt</code> correlates with <code>shank − thigh</code> gyro on axis Y at r = −0.87 and on Z
+    at r = +0.80 (mean over 28 files).
+  - Ankle: axis Y, r = −0.86.</p>
+<p>The sagittal axis is a mix of sensor axes, with a sign that has to be found. This supports
+  per-sensor alignment from walking data. All people are checked in step 5.
+- <strong>2026-11-19, LUMI outage.</strong> LUMI filesystem problems (lustrep3, which holds the home
+  directory) blocked all logins from about 02:45 CET. Conversion code was developed meanwhile
+  on a local copy of one person (AB25), outside the repo. All study data are still prepared on
+  LUMI.
+- <strong>2026-11-19, gyro alignment fix: 6 Hz smoothing</strong> (walking data of AB25 only, before any
+  model). Without smoothing, AB25 failed the required gyro check at the ankle: on validation the
+  relative residual was 0.84 and the gyro speed was 1.5× the IK speed, because of heel-strike
+  spikes that the 6 Hz-filtered markers lack.
+  - With a zero-phase 6 Hz low-pass on the gyro joint speed: knee r = 0.95 (residual 0.33),
+    ankle r = 0.95 (residual 0.38). Both pass.
+  - The smoothing is used only inside the training loss, never as a model input.
+- <strong>2026-11-19, swing term details</strong> (fixed before training):
+  - The thigh angle is the predicted hip angle (pelvis tilt neglected). The thigh angular speed
+    comes from the aligned thigh gyro. Hip linear acceleration is neglected.
+  - The foot centre of mass sits at the ankle (Winter tables otherwise).
+  - <strong>Muscles:</strong> BF, ST, gracilis and MG are flexors (+); VM, VL and RF are extensors (−).
+    TA, soleus, glut. med. and the oblique are not used.
+  - <strong>Activation:</strong> envelope / its 95th percentile on walking training files, then a 40 ms
+    first-order filter.
+  - <strong>Swing:</strong> foot gyro norm above its 60th percentile on walking training files, so about
+    40% of walking samples count as swing, for at least 100 ms.
+- <strong>2026-11-19, gyro alignment, final form</strong> (walking data only; no model trained yet). With
+  the principal-axis alignment, 14 of 22 people passed the required gyro check. For each person
+  and joint there are now two candidates, both fitted on walking training files:
+  - <code>pca</code>: each sensor's principal gyro axis;
+  - <code>lsq</code>: each sensor's unit axis from a least-squares fit to the true joint speed.</p>
+<p>The one with the higher correlation on walking validation files is kept. With this, 16 of 22
+  pass.
+- <strong>2026-11-19, exclusion applied (pre-registered rule).</strong> AB06, AB07, AB08, AB16, AB19 and
+  AB20 fail the gyro check even after the fix:
+  - AB06: ankle r = −0.06, which looks like a sensor problem;
+  - AB07: ankle r = 0.84, just below 0.85;
+  - the others: r = 0.76–0.83 on one joint.</p>
+<p>They are left out of tuning selection and of the verdict, for both models. Both models are
+  still trained for them, and a sensitivity test on all 22 people is reported separately. It
+  is not part of the verdict.
+- <strong>2026-11-19, job layout.</strong> LUMI allows 210 submitted jobs per user on <code>small-g</code>. So each
+  array task trains one (model, person) pair on 1 GCD: either all 12 tuning configurations or
+  the 5 final seeds, one after another. That gives 44 tasks per batch. Each run still uses
+  exactly one GCD.
+- <strong>2026-11-19, local AB25 development runs.</strong> Two 2-epoch runs on AB25, used to test the code,
+  produced test-stream predictions. Their stair numbers were never printed or looked at, and
+  the runs were deleted.
+- <strong>2026-11-19, tuning round 2</strong> (declared before it runs; walking validation only, no stair data
+  seen). Round 1 (planned grid) chose <code>base</code> c08 (2.41°) and <code>pinn</code> c03 (λ = 0.03, 3.76°).
+  <code>pinn</code> got worse as λ grew, and a walking-only check on AB25 showed why:
+  - <strong>Loss scale:</strong> the physics terms sit at about 2.6 even with the true angles (gyro 0.12,
+    swing 2.57). <code>base</code>'s converged angle loss is about 0.015, so λ ≥ 0.03 lets physics
+    dominate.
+  - <strong>Dropout:</strong> with dropout on, the physics terms were 1.6–2× larger, because they
+    differentiate the output in time.
+  - <strong>Epoch cap:</strong> <code>pinn</code> was still improving at the 60-epoch cap; <code>base</code> stops near 28.</p>
+<p>Round 2 uses the same settings for both models: dropout 0 and a cap of 150 epochs. Each model
+  gets 12 new configurations:
+  - <code>base</code>: the same grid as before;
+  - <code>pinn</code>: λ ∈ {0.001, 0.003, 0.01}, so that λ × the floor spans about 0.1–2× the angle loss.</p>
+<p>Only round-2 runs are used for selection. This is the last tuning round: if the smallest λ
+  wins, it is used as is. Both rounds count towards the GPU budget and are reported.
+- <strong>2026-11-19, swing-model fit.</strong> With the true angles, the swing residual is about 2.6 times
+  the std of <code>I·knee_acc</code>. That is above what a trained model reaches, so the simple pendulum
+  in the task spec explains true swing motion poorly. Reported as a limitation, not changed.
+- <strong>2026-11-19, tuning result (round 2, walking validation, 16 included people).</strong>
+  - <code>base</code>: r2c07 (lr 3e-3, width 32, weight decay 1e-5), mean validation RMSE 2.30°.
+  - <code>pinn</code>: r2c09 (lr 3e-3, width 64, λ = 0.001), mean validation RMSE 2.34°. λ = 0.001 is the
+    smallest value in the grid; as declared above, it is used as is. The plan is frozen from
+    here: no changes after the final batch.
+- <strong>2026-11-19, added after the main result, at the user's request: a strongly
+  physics-constrained model, <code>pinn_strong</code>.</strong> This is an addition. The pre-registered
+  <code>base</code> vs <code>pinn</code> verdict above is unchanged.
+  - <strong>Settings:</strong> the same network and settings as the tuned <code>pinn</code> (lr 3e-3, width 64,
+    dropout 0, up to 150 epochs) with a fixed, untuned physics weight λ = 0.1.
+  - <strong>Why 0.1:</strong> this value was fixed <strong>after the base-vs-pinn stairs result was known</strong>, but only
+    from walking-only numbers measured before the final batch: the floor of the physics terms
+    with the true angles ≈ 2.6, and <code>base</code>'s converged angle loss ≈ 0.015.
+    - At λ = 0.1 the physics term is about 17× the angle loss at the floor, so physics
+      dominates training.
+    - Round 1 had already trained λ = 0.03, 0.3 and 3 on walking validation: <code>pinn</code> got worse
+      as λ grew (λ = 0.03: 3.76° vs <code>base</code> 2.41°, under round-1 settings). 0.1 sits between the
+      two lower values: strongly constrained, without the very large walking errors of λ ≥ 0.3.
+    - No stairs number was used to choose it.
+  - <strong>Test:</strong> the same as the primary one, on the same 16 people: Wilcoxon on <code>base − pinn_strong</code>,
+    error after switch averaged over the three joints, with the same verdict rule. Reported as
+    a separate, clearly labelled result.
+  - <strong>Also reported:</strong> its walking-validation and walking-test errors. Its time to fail is
+    shown only as a secondary result, because the threshold is relative to each model's own
+    walking error.</p></main><script>
+document.querySelectorAll('table.sortable th').forEach((th, i) => {
+  th.addEventListener('click', () => {
+    const tb = th.closest('table').tBodies[0];
+    const asc = th.dataset.asc !== '1'; th.dataset.asc = asc ? '1' : '0';
+    const rows = [...tb.rows].sort((a, b) => {
+      const x = a.cells[i].textContent, y = b.cells[i].textContent;
+      const nx = parseFloat(x), ny = parseFloat(y);
+      const c = (!isNaN(nx) && !isNaN(ny)) ? nx - ny : x.localeCompare(y);
+      return asc ? c : -c;
+    });
+    rows.forEach(r => tb.appendChild(r));
+  });
+});
+</script></body></html>
