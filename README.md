@@ -180,3 +180,86 @@ and 23967891).
 
 **Limitations:** gaps hit all modes equally (real occlusion is worse on stairs); people in a
 fold share trained models; GPU runs are not bit-reproducible.
+
+## Study 4: gyros only in the physics loss
+
+Plan: `PLAN4.md`. As in study 3, but the network does not see the gyros. `base` and `pinn` get
+EMG only (primary) or EMG + accelerometers (secondary). The gyros enter only `pinn`'s physics
+loss (knee and ankle gyro term, no swing term). This matches a real use: train in a lab with
+IMUs, then deploy a cheaper device without gyros. `distill` (secondary, EMG only) uses the gyros
+another way: an all-sensor teacher (study 3's `base`) fills in the missing training angles.
+
+**At 99% missing (EMG only), the pre-registered primary test favours `pinn`, but the effect is
+small, and `distill` does better without any physics** (error after switch, mean of hip, knee
+and ankle, n = 22, Wilcoxon):
+
+| Missing | `base` | `pinn` | `distill` | Headroom (95% CI) | Holm p | Hodges–Lehmann `base − pinn` (95% CI) | Verdict |
+|---|---|---|---|---|---|---|---|
+| 0% (reference) | 8.86° | 9.03° | – | – | – (p = 0.10) | −0.13° (−0.31 to +0.01) | – |
+| 50% | 9.12° | 9.07° | 9.02° | +0.26° (+0.14 to +0.41) | 0.633 | +0.02° (−0.06 to +0.11) | equivalent within ±0.5° |
+| 90% | 9.43° | 9.62° | 9.17° | +0.57° (+0.40 to +0.73) | 0.275 | −0.13° (−0.33 to +0.02) | equivalent within ±0.5° |
+| 99% (primary) | 10.80° | 10.40° | 9.98° | +1.94° (+1.59 to +2.27) | 0.003 | +0.34° (+0.15 to +0.58) | `pinn` better |
+
+Headroom is how much `base` loses at that share compared with 0% (`base`@share − `base`@0%).
+The Holm family for 50% and 90% is separate from the single primary test at 99%.
+
+- **Size:** +0.34° is below the pre-registered 0.5° smallest effect of interest, and its CI
+  includes 0.5°. `pinn` wins back about a fifth of what `base` loses from missing angles at 99%
+  (0.34° of 1.94°).
+- **Folds:** the per-fold medians of `base − pinn` are +0.75°, +0.03°, +0.08° and +0.30°. All
+  four favour `pinn`, as the verdict rule requires, but two are near zero, and the largest is
+  fold 0, the fold the feasibility pilot used (validation people only).
+- **Per joint at 99%:** the gain is at the knee (+0.58°, p = 0.011) and the ankle (+0.51°,
+  p < 0.001), the two joints with a gyro term. The hip is unchanged (p = 0.46).
+- **`distill` beats `pinn`** at 90% (Holm p = 0.007, `distill − pinn` −0.35°) and 99% (Holm
+  p = 0.006, −0.37°), and they are equivalent at 50%. `distill` is untuned and its teacher sees
+  more (all 35 channels, including the accelerometers, and every training person's gyros).
+  Still, by the plan's own reading, physics is not needed to make use of the extra sensors.
+- **Where `pinn` is worse or flat:** at 0% `pinn` is 0.13° worse (p = 0.10; hip p = 0.046,
+  uncorrected), and at 90% it is 0.13° worse (equivalent). The `base − pinn` difference grows
+  with the share (Page trend p = 0.002).
+- **Tuning:** the physics weight λ chosen per fold at 99% was 0.1–0.3. The smallest value,
+  0.01 ("validation preferred almost no physics"), won only at 0% (2 of 4 folds).
+- **The 16 people who passed study 1's gyro check (99%):** same direction (+0.41°, p = 0.005).
+
+**EMG + accelerometers (secondary): the 99% result does not replicate.**
+
+| Missing | `base` | `pinn` | Headroom (95% CI) | Holm p | Hodges–Lehmann `base − pinn` (95% CI) | Verdict |
+|---|---|---|---|---|---|---|
+| 0% (reference) | 7.42° | 7.44° | – | – (p = 0.19) | −0.07° (−0.16 to +0.03) | – |
+| 50% | 7.51° | 7.49° | +0.08° (−0.01 to +0.16) | 0.656 | +0.03° (−0.11 to +0.15) | equivalent within ±0.5° |
+| 90% | 7.75° | 7.47° | +0.32° (+0.16 to +0.48) | < 0.001 | +0.27° (+0.15 to +0.37) | `pinn` better |
+| 99% | 8.69° | 8.48° | +1.26° (+1.00 to +1.52) | 0.353 | +0.12° (−0.13 to +0.45) | equivalent within ±0.5° |
+
+- At 99%, the per-fold medians range from −0.41° to +0.94°.
+- The 90% gain is a secondary test where the headroom is only 0.32°, so there was little to
+  recover. It does not confirm the primary result.
+- λ = 0.01 won in 1 of 4 folds at 90% and in 2 of 4 at 99%.
+
+**Reading:** with the gyros removed from the inputs, the gyro physics term does carry some
+information into a gyro-free network when almost all training angles are missing. The gain is
+small, it sits at the knee and ankle, and a plain teacher–student approach (`distill`) uses the
+same extra sensors better. This is the first of the four studies in which `pinn` beat `base`
+on a pre-registered test (studies 1 and 2: no clear difference; study 3: `base` better).
+
+**Checks:**
+- An independent recomputation from the raw run records, without the project's analysis code,
+  reproduces the means, statistics, p values, Hodges–Lehmann estimates and per-fold medians of
+  the 99% tests (both input sets, and `distill` vs `pinn`).
+- **Teacher check:** the `distill` teacher's validation score differs from study 3's `base` run
+  with the same configuration, share, fold, seed and mask by 0.13° on average.
+  - The maximum is 0.85° (99%, fold 1, seed 0). Differences go both ways (the next largest is
+    −0.62°).
+  - This is above study 2's 0.54° run-to-run spread. It is consistent with GPU non-determinism
+    on the very small 99% training sets, but that was not proven.
+
+Every number comes from `runs/summary/results_g4.json` and `results_g4a.json`
+(`gaitpinn.test gsummary --prefix g4|g4a`), built from the final records
+`g4final-<model>-…` and `g4afinal-<model>-…` (arrays 24008564, 24009038 and 24009276).
+
+**Limitations:**
+- The 22 test people are the same as in studies 1–3, whose results motivated this study.
+- The pilot used fold 0's validation people.
+- There is no placebo control (e.g. a time-shifted gyro).
+- People in a fold share trained models.
+- GPU runs are not bit-reproducible.

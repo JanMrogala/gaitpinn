@@ -222,3 +222,21 @@ people were involved in the pilot.
   - **GPU-hours:** 27.9 for tuning; ledger 68.7 for the whole project.
   - **Finals submitted with lower time limits** (30 min per final run, 1 h per `distill` run
     with its teacher; the longest tuning run took 7.5 min). Worst case about 110 GPU-hours.
+- **2026-11-25, final runs done** (arrays 24008564, 24009038 and 24009276, all 380 tasks
+  completed; ledger 83.2 GPU-hours for the whole project).
+  - **Result:** at 99% missing, EMG only, `pinn` is better (Hodges–Lehmann +0.34°, CI +0.15
+    to +0.58, p = 0.003, all four folds), below the 0.5° smallest effect of interest.
+  - `distill` is better than `pinn` at 90% and 99%.
+  - The EMG + accelerometers set is equivalent at 99% and favours `pinn` at 90%.
+  - Details in the README and on the website.
+  - An independent recomputation from the raw records reproduces the 99% tests exactly.
+  - **Teacher check:** max |difference| 0.85° (99%, fold 1, seed 0). The configuration, seed
+    and mask are the same as study 3's run, and the differences go both ways; reported as is.
+  - **Display changes on the study-4 page, after the result, with no effect on any number:**
+    - each `base` vs `pinn` line shows the headroom, and "equivalent" is flagged where the
+      headroom is below 0.5° (as the plan states);
+    - the chosen λ per fold is listed, with the smallest-λ note;
+    - the EMG + accelerometers 99% line is labelled "main share of this secondary set"
+      instead of "primary";
+    - the gyro-check subset lines no longer show the all-people means next to an n = 16
+      test.

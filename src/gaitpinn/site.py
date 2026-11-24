@@ -407,15 +407,24 @@ def _p(v: float) -> str:
     return "< 0.001" if v < 0.001 else f"= {v:.3f}"
 
 
-def _test_line(label: str, w: dict, n: dict, a: str = "base", b: str = "pinn") -> str:
+def _test_line(
+    label: str, w: dict, n: dict | None, a: str = "base", b: str = "pinn", note: str = ""
+) -> str:
+    """One test as a list item. n=None leaves out the means (e.g. for a subset of people,
+    whose means are not stored)."""
     v = w.get("verdict")
     head = f"<b>{html.escape(label)}:</b> " + (f"{html.escape(v)} " if v else "")
     holm = f", Holm-adjusted p {_p(w['p_holm'])}" if "p_holm" in w else ""
+    means = (
+        f"mean error on stairs {a} {n[a]['error_after_switch_mean3']:.2f}° vs {b} "
+        f"{n[b]['error_after_switch_mean3']:.2f}°; "
+        if n
+        else ""
+    )
     return (
-        f"<li>{head}(mean error on stairs {a} {n[a]['error_after_switch_mean3']:.2f}° vs {b} "
-        f"{n[b]['error_after_switch_mean3']:.2f}°; Wilcoxon p {_p(w['p'])}{holm}, "
+        f"<li>{head}({means}Wilcoxon p {_p(w['p'])}{holm}, "
         f"r = {w['rank_biserial_r']:+.2f}, Hodges–Lehmann ({a} − {b}) {w['hodges_lehmann']:+.2f}° "
-        f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}{nz_note(w)}).</li>"
+        f"[{w['hl_ci95'][0]:+.2f}, {w['hl_ci95'][1]:+.2f}], n = {w['n']}{nz_note(w)}){note}.</li>"
     )
 
 
@@ -476,7 +485,7 @@ def study3_body(runs_dir: Path) -> tuple[str, bool]:
             sec_lines += _test_line(
                 f"{round(b['share'] * 100)}%: the {w['n']} people who passed study 1's gyro check",
                 w,
-                b["numbers"],
+                None,
             )
     if "trend" in s:
         tr = s["trend"]
@@ -566,14 +575,38 @@ sel.onchange=()=>eot(sel.value); eot('error_over_time_{first}');
 def _gap_set(s: dict, pre: str, primary: bool) -> str:
     """One study-4 input set: tests, headroom, numbers, figures (ids prefixed with pre)."""
     sh = s["shares"]
+    hr = s.get("headroom", {})
     tests = ""
-    for b in sh.values():
+    for t, b in sh.items():
         w = b["test"]
         if "p_holm" not in w:
             continue
-        fam = "primary" if w.get("family") == "primary" else "secondary, Holm over 50% and 90%"
-        tests += _test_line(f"{round(b['share'] * 100)}% missing ({fam})", w, b["numbers"])
-    hr = s.get("headroom", {})
+        if w.get("family") != "primary":
+            fam = "secondary, Holm over 50% and 90%"
+        else:
+            fam = "primary" if primary else "main share of this secondary set"
+        h = hr.get(t)
+        note = ""
+        if h:
+            note = f"; headroom {h['mean']:+.2f}°"
+            if w.get("verdict", "").startswith("equivalent") and h["mean"] < 0.5:
+                note += " (below 0.5°, so equivalence says little: there was little to recover)"
+        tests += _test_line(
+            f"{round(b['share'] * 100)}% missing ({fam})", w, b["numbers"], note=note
+        )
+    lam = []
+    for b in sh.values():
+        per = [c.get("lam") for _, c in sorted(b.get("configs", {}).get("pinn", {}).items())]
+        small = sum(v == 0.01 for v in per)
+        txt = ", ".join(f"{v:g}" for v in per)
+        lam.append(
+            f"{round(b['share'] * 100)}%: {txt}"
+            + (f" (smallest λ in {small} of {len(per)} folds)" if small else "")
+        )
+    tests += (
+        "<li><b>Chosen λ per fold</b> (pinn): " + html.escape("; ".join(lam)) + ". Where the "
+        "smallest value, 0.01, won, validation preferred almost no physics.</li>"
+    )
     rows = ""
     for t, b in sh.items():
         n = b["numbers"]
@@ -608,9 +641,7 @@ def _gap_set(s: dict, pre: str, primary: bool) -> str:
     for b in sh.values():
         w = b["secondary"].get("base vs pinn/primary/gyro-check people")
         if w and b["share"] == 0.99:
-            sec += _test_line(
-                f"99%: the {w['n']} people who passed study 1's gyro check", w, b["numbers"]
-            )
+            sec += _test_line(f"99%: the {w['n']} people who passed study 1's gyro check", w, None)
     if "trend" in s:
         sec += (
             f"<li><b>Does the base − pinn difference grow with the share?</b> Page trend test "

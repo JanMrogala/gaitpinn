@@ -231,3 +231,6 @@ with ±1e6. A short CPU run must then give exactly the same:
   - Display changes after the result, with no effect on any number: p below 0.001 is shown as
     "< 0.001", and the figure notes that error bars show spread across people while the tests
     are paired.
+- **2026-11-25, display correction on the study-3 page** (found while building study 4's page,
+  no effect on any test): the lines for the 16 people who passed study 1's gyro check showed
+  the means of all 22 people next to the n = 16 test. They now show the test only.
